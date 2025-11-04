@@ -14,7 +14,7 @@ cd /home/user/cryptoBot
 npm start
 
 # 3. Open your browser
-# Navigate to: http://localhost:3000
+# Navigate to: http://localhost:3001
 ```
 
 That's it! The dashboard will open and you can:
@@ -75,7 +75,7 @@ npm run dev
 
 Open your browser and navigate to:
 ```
-http://localhost:3000
+http://localhost:3001
 ```
 
 ## 🎮 Using the Dashboard
@@ -203,7 +203,7 @@ npm run clean
 **Solution:**
 ```bash
 # Check if server is running
-curl http://localhost:3000/api/status
+curl http://localhost:3001/api/status
 
 # If not, start the server
 npm start
@@ -353,7 +353,7 @@ Before starting your bots, ensure:
 - [ ] Project builds successfully (`npm run build`)
 - [ ] `.env` configured (for real trading only)
 - [ ] Server starts without errors (`npm start`)
-- [ ] Dashboard accessible at http://localhost:3000
+- [ ] Dashboard accessible at http://localhost:3001
 - [ ] Mode selected (fake for testing, real for live)
 - [ ] Budget set appropriately
 - [ ] API keys entered (real trading only)

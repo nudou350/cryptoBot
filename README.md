@@ -122,14 +122,14 @@ cryptoBot/
    ```
 
 6. **Open the dashboard**
-   - Navigate to `http://localhost:3000`
+   - Navigate to `http://localhost:3001`
    - The beautiful dashboard will open in your browser
 
 ## 🎮 Usage
 
 ### Step 1: Initialize the System
 
-1. Open the dashboard at `http://localhost:3000`
+1. Open the dashboard at `http://localhost:3001`
 2. Choose your trading mode:
    - **Fake Trading**: For risk-free simulation
    - **Real Trading**: For live trading (requires API keys)
