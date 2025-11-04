@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Trading Bot Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 Crypto Trading Bot Dashboard</h1>
+            <p class="subtitle">BTC/USDT Automated Trading System</p>
+        </header>
+
+        <!-- Configuration Section -->
+        <section id="config-section" class="card">
+            <h2>Configuration</h2>
+            <div class="form-group">
+                <label for="mode">Trading Mode:</label>
+                <select id="mode">
+                    <option value="fake" selected>Fake Trading (Simulation)</option>
+                    <option value="real">Real Trading (Live)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="budget">Initial Budget ($):</label>
+                <input type="number" id="budget" value="100" min="10" step="10">
+            </div>
+            <div id="api-keys" style="display: none;">
+                <div class="form-group">
+                    <label for="apiKey">Binance API Key:</label>
+                    <input type="text" id="apiKey" placeholder="Enter your API key">
+                </div>
+                <div class="form-group">
+                    <label for="apiSecret">Binance API Secret:</label>
+                    <input type="password" id="apiSecret" placeholder="Enter your API secret">
+                </div>
+            </div>
+            <button id="initialize-btn" class="btn btn-primary">Initialize System</button>
+        </section>
+
+        <!-- Control Section -->
+        <section id="control-section" class="card" style="display: none;">
+            <h2>Controls</h2>
+            <div class="controls">
+                <button id="start-btn" class="btn btn-success">Start All Bots</button>
+                <button id="stop-btn" class="btn btn-danger">Stop All Bots</button>
+                <div class="status-indicator">
+                    <span class="status-label">Status:</span>
+                    <span id="status" class="status stopped">Stopped</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Bot Selection -->
+        <section id="bot-section" class="card" style="display: none;">
+            <h2>Bot Selection</h2>
+            <div class="form-group">
+                <label for="bot-select">Select Bot:</label>
+                <select id="bot-select">
+                    <option value="">Choose a bot...</option>
+                    <option value="GridTrading">Grid Trading (70-75% win rate)</option>
+                    <option value="MeanReversion">Mean Reversion (65-70% win rate)</option>
+                    <option value="TrendFollowing">Trend Following (60-65% win rate)</option>
+                </select>
+            </div>
+        </section>
+
+        <!-- Bot Statistics -->
+        <section id="stats-section" class="card" style="display: none;">
+            <h2>Bot Statistics - <span id="current-bot-name">-</span></h2>
+            <div class="price-display">
+                <span class="price-label">Current BTC Price:</span>
+                <span id="current-price" class="price">$0.00</span>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Strategy</div>
+                    <div class="stat-value" id="stat-strategy">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Status</div>
+                    <div class="stat-value" id="stat-status">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Initial Budget</div>
+                    <div class="stat-value" id="stat-initial-budget">$0.00</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Current Budget</div>
+                    <div class="stat-value" id="stat-current-budget">$0.00</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total PnL</div>
+                    <div class="stat-value" id="stat-total-pnl">$0.00</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total Trades</div>
+                    <div class="stat-value" id="stat-total-trades">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Winning Trades</div>
+                    <div class="stat-value" id="stat-winning-trades">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Losing Trades</div>
+                    <div class="stat-value" id="stat-losing-trades">0</div>
+                </div>
+                <div class="stat-card highlight">
+                    <div class="stat-label">Win Rate</div>
+                    <div class="stat-value" id="stat-win-rate">0%</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Open Positions</div>
+                    <div class="stat-value" id="stat-open-positions">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Open Orders</div>
+                    <div class="stat-value" id="stat-open-orders">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Current Drawdown</div>
+                    <div class="stat-value" id="stat-drawdown">0%</div>
+                </div>
+            </div>
+
+            <!-- Positions Table -->
+            <div class="table-container">
+                <h3>Open Positions</h3>
+                <table id="positions-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Entry Price</th>
+                            <th>Amount</th>
+                            <th>Current Price</th>
+                            <th>Unrealized PnL</th>
+                            <th>Stop Loss</th>
+                            <th>Take Profit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="positions-body">
+                        <tr>
+                            <td colspan="8" class="empty-state">No open positions</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
