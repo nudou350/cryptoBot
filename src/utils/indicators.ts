@@ -265,3 +265,95 @@ export function calculateMACD(candles: Candle[], fastPeriod: number = 12, slowPe
 
   return { macd, signal, histogram };
 }
+
+/**
+ * Calculate Directional Indicators (+DI and -DI) for ADX Strategy
+ */
+export function calculateDI(candles: Candle[], period: number = 14): {
+  plusDI: number[];
+  minusDI: number[];
+} {
+  const plusDI: number[] = [];
+  const minusDI: number[] = [];
+
+  if (candles.length < period + 1) {
+    return {
+      plusDI: new Array(candles.length).fill(0),
+      minusDI: new Array(candles.length).fill(0)
+    };
+  }
+
+  // Calculate +DM, -DM, and TR
+  const plusDM: number[] = [];
+  const minusDM: number[] = [];
+  const tr: number[] = [];
+
+  for (let i = 1; i < candles.length; i++) {
+    const high = candles[i].high;
+    const low = candles[i].low;
+    const prevHigh = candles[i - 1].high;
+    const prevLow = candles[i - 1].low;
+    const prevClose = candles[i - 1].close;
+
+    const upMove = high - prevHigh;
+    const downMove = prevLow - low;
+
+    plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);
+
+    const tr1 = high - low;
+    const tr2 = Math.abs(high - prevClose);
+    const tr3 = Math.abs(low - prevClose);
+    tr.push(Math.max(tr1, tr2, tr3));
+  }
+
+  // Calculate smoothed +DI and -DI
+  for (let i = 0; i < tr.length; i++) {
+    if (i < period - 1) {
+      plusDI.push(0);
+      minusDI.push(0);
+      continue;
+    }
+
+    let sumPlusDM = 0;
+    let sumMinusDM = 0;
+    let sumTR = 0;
+
+    for (let j = 0; j < period; j++) {
+      sumPlusDM += plusDM[i - j];
+      sumMinusDM += minusDM[i - j];
+      sumTR += tr[i - j];
+    }
+
+    plusDI.push(sumTR > 0 ? (sumPlusDM / sumTR) * 100 : 0);
+    minusDI.push(sumTR > 0 ? (sumMinusDM / sumTR) * 100 : 0);
+  }
+
+  // Add initial 0
+  plusDI.unshift(0);
+  minusDI.unshift(0);
+
+  return { plusDI, minusDI };
+}
+
+/**
+ * Calculate average volume over a period
+ */
+export function calculateAverageVolume(candles: Candle[], period: number): number[] {
+  const avgVolume: number[] = [];
+
+  for (let i = 0; i < candles.length; i++) {
+    if (i < period - 1) {
+      avgVolume.push(0);
+      continue;
+    }
+
+    let sum = 0;
+    for (let j = 0; j < period; j++) {
+      sum += candles[i - j].volume;
+    }
+    avgVolume.push(sum / period);
+  }
+
+  return avgVolume;
+}

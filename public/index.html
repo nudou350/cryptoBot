@@ -65,6 +65,101 @@
             </div>
         </section>
 
+        <!-- Overall Performance Dashboard -->
+        <section id="performance-section" class="card" style="display: none;">
+            <h2>📊 All Bots Performance Analysis</h2>
+
+            <!-- Portfolio Summary -->
+            <div class="performance-summary">
+                <div class="summary-card highlight">
+                    <div class="summary-label">Total Portfolio PnL</div>
+                    <div class="summary-value" id="portfolio-pnl">$0.00</div>
+                    <div class="summary-subtext" id="portfolio-pnl-percent">0.00%</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-label">Active Bots</div>
+                    <div class="summary-value" id="active-bots-count">0/0</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-label">Combined Win Rate</div>
+                    <div class="summary-value" id="combined-win-rate">0%</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-label">Total Trades</div>
+                    <div class="summary-value" id="total-trades">0</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-label">Open Positions</div>
+                    <div class="summary-value" id="total-positions">0</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-label">Sharpe Ratio</div>
+                    <div class="summary-value" id="portfolio-sharpe">0.00</div>
+                </div>
+            </div>
+
+            <!-- Alerts Section -->
+            <div id="alerts-container" style="display: none; margin-top: 20px;">
+                <h3 style="color: #ed8936; margin-bottom: 15px;">⚠️ Active Alerts</h3>
+                <div id="alerts-list" class="alerts-list"></div>
+            </div>
+
+            <!-- Bot Rankings -->
+            <div class="rankings-container">
+                <h3>🏆 Bot Leaderboard</h3>
+                <div class="table-container">
+                    <table id="leaderboard-table">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Bot Name</th>
+                                <th>Strategy</th>
+                                <th>PnL</th>
+                                <th>Win Rate</th>
+                                <th>Trades</th>
+                                <th>Sharpe</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboard-body">
+                            <tr>
+                                <td colspan="8" class="empty-state">Loading performance data...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Recommendations -->
+            <div id="recommendations-container" style="display: none; margin-top: 20px;">
+                <h3>💡 Recommendations</h3>
+                <div id="recommendations-list" class="recommendations-list"></div>
+            </div>
+        </section>
+
+        <!-- Bot Logs Viewer -->
+        <section id="logs-section" class="card" style="display: none;">
+            <div class="logs-header">
+                <h2>📋 Bot Logs - <span id="log-bot-name">Select a bot</span></h2>
+                <div class="logs-controls">
+                    <button id="refresh-logs-btn" class="btn btn-small">🔄 Refresh</button>
+                    <button id="clear-logs-btn" class="btn btn-small">🗑️ Clear</button>
+                    <button id="auto-scroll-toggle" class="btn btn-small active">⬇️ Auto-scroll</button>
+                </div>
+            </div>
+            <div class="logs-container" id="logs-container">
+                <div class="log-empty-state">
+                    <p>📊 Select a bot to view its logs</p>
+                    <p class="log-hint">Logs will update automatically in real-time</p>
+                </div>
+            </div>
+            <div class="logs-footer">
+                <span id="log-line-count">0 lines</span>
+                <span id="log-status">●</span>
+                <span id="log-last-update">Not connected</span>
+            </div>
+        </section>
+
         <!-- Bot Statistics -->
         <section id="stats-section" class="card" style="display: none;">
             <h2>Bot Statistics - <span id="current-bot-name">-</span></h2>

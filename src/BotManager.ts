@@ -16,6 +16,14 @@ import { GridTradingAggressiveStrategy } from './strategies/GridTradingAggressiv
 import { SashaLiqProvidingAggressiveStrategy } from './strategies/SashaLiqProvidingAggressiveStrategy';
 import { SashaMMLadderAggressiveStrategy } from './strategies/SashaMMLadderAggressiveStrategy';
 import { SashaHybridAggressiveStrategy } from './strategies/SashaHybridAggressiveStrategy';
+// NEW: Advanced EMA and Momentum Strategies
+import { EMACrossoverStrategy } from './strategies/EMACrossoverStrategy';
+import { TripleEMAStrategy } from './strategies/TripleEMAStrategy';
+import { EMARibbonStrategy } from './strategies/EMARibbonStrategy';
+import { EMAMACDStrategy } from './strategies/EMAMACDStrategy';
+import { EMASlopeMomentumStrategy } from './strategies/EMASlopeMomentumStrategy';
+import { ADXTrendStrategy } from './strategies/ADXTrendStrategy';
+import { VolumeBreakoutStrategy } from './strategies/VolumeBreakoutStrategy';
 import { BotMode, BotStats } from './types';
 
 /**
@@ -79,6 +87,15 @@ export class BotManager {
     this.createBot('Sasha-LiqProviding-Aggressive', new SashaLiqProvidingAggressiveStrategy());
     this.createBot('Sasha-MMLadder-Aggressive', new SashaMMLadderAggressiveStrategy());
     this.createBot('Sasha-Hybrid-Aggressive', new SashaHybridAggressiveStrategy());
+
+    // Create NEW ADVANCED EMA and MOMENTUM bots
+    this.createBot('EMACrossover', new EMACrossoverStrategy());
+    this.createBot('TripleEMA', new TripleEMAStrategy());
+    this.createBot('EMARibbon', new EMARibbonStrategy());
+    this.createBot('EMAMACD', new EMAMACDStrategy());
+    this.createBot('EMASlopeMomentum', new EMASlopeMomentumStrategy());
+    this.createBot('ADXTrend', new ADXTrendStrategy());
+    this.createBot('VolumeBreakout', new VolumeBreakoutStrategy());
 
     console.log('Bot Manager initialized');
     console.log(`Created ${this.bots.size} bots: ${Array.from(this.bots.keys()).join(', ')}`);
