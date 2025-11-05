@@ -6,6 +6,11 @@ import { TrendFollowingStrategy } from './strategies/TrendFollowingStrategy';
 import { SashaLiqProvidingStrategy } from './strategies/SashaLiqProvidingStrategy';
 import { SashaMMLadderStrategy } from './strategies/SashaMMLadderStrategy';
 import { SashaHybridStrategy } from './strategies/SashaHybridStrategy';
+// Optimized strategies (Option B - Balanced)
+import { GridTradingOptimizedStrategy } from './strategies/GridTradingOptimizedStrategy';
+import { SashaLiqProvidingOptimizedStrategy } from './strategies/SashaLiqProvidingOptimizedStrategy';
+import { SashaMMLadderOptimizedStrategy } from './strategies/SashaMMLadderOptimizedStrategy';
+import { SashaHybridOptimizedStrategy } from './strategies/SashaHybridOptimizedStrategy';
 import { BotMode, BotStats } from './types';
 
 /**
@@ -57,6 +62,12 @@ export class BotManager {
     this.createBot('Sasha-LiqProviding', new SashaLiqProvidingStrategy());
     this.createBot('Sasha-MMLadder', new SashaMMLadderStrategy());
     this.createBot('Sasha-Hybrid', new SashaHybridStrategy());
+
+    // Create OPTIMIZED bots (Option B - Balanced optimization)
+    this.createBot('GridTrading-Optimized', new GridTradingOptimizedStrategy());
+    this.createBot('Sasha-LiqProviding-Optimized', new SashaLiqProvidingOptimizedStrategy());
+    this.createBot('Sasha-MMLadder-Optimized', new SashaMMLadderOptimizedStrategy());
+    this.createBot('Sasha-Hybrid-Optimized', new SashaHybridOptimizedStrategy());
 
     console.log('Bot Manager initialized');
     console.log(`Created ${this.bots.size} bots: ${Array.from(this.bots.keys()).join(', ')}`);
