@@ -66,6 +66,9 @@ initializeBtn.addEventListener('click', async () => {
             configSection.style.display = 'none';
             controlSection.style.display = 'block';
             botSection.style.display = 'block';
+
+            // Load available bots
+            await loadBots();
         } else {
             alert(`Error: ${data.error}`);
             initializeBtn.disabled = false;
@@ -258,6 +261,39 @@ function stopAutoUpdate() {
     }
 }
 
+// Load available bots
+async function loadBots() {
+    try {
+        const response = await fetch(`${API_URL}/bots`);
+        const data = await response.json();
+
+        if (data.success && data.bots) {
+            // Bot display names with win rates
+            const botDisplayNames = {
+                'GridTrading': 'Grid Trading (70-75% win rate)',
+                'MeanReversion': 'Mean Reversion (65-70% win rate)',
+                'TrendFollowing': 'Trend Following (60-65% win rate)',
+                'Sasha-LiqProviding': 'Sasha-LiqProviding (70-75% win rate)',
+                'Sasha-MMLadder': 'Sasha-MMLadder (65-70% win rate)',
+                'Sasha-Hybrid': 'Sasha-Hybrid (70-75% win rate)'
+            };
+
+            // Clear existing options except the first one
+            botSelect.innerHTML = '<option value="">Choose a bot...</option>';
+
+            // Add all bots from the server
+            data.bots.forEach(botName => {
+                const option = document.createElement('option');
+                option.value = botName;
+                option.textContent = botDisplayNames[botName] || botName;
+                botSelect.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading bots:', error);
+    }
+}
+
 // Check server status on load
 async function checkServerStatus() {
     try {
@@ -268,6 +304,9 @@ async function checkServerStatus() {
             configSection.style.display = 'none';
             controlSection.style.display = 'block';
             botSection.style.display = 'block';
+
+            // Load bots
+            await loadBots();
 
             if (data.running) {
                 statusSpan.textContent = 'Running';

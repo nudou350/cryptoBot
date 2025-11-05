@@ -3,6 +3,9 @@ import { BinanceWebSocket } from './services/BinanceWebSocket';
 import { GridTradingStrategy } from './strategies/GridTradingStrategy';
 import { MeanReversionStrategy } from './strategies/MeanReversionStrategy';
 import { TrendFollowingStrategy } from './strategies/TrendFollowingStrategy';
+import { SashaLiqProvidingStrategy } from './strategies/SashaLiqProvidingStrategy';
+import { SashaMMLadderStrategy } from './strategies/SashaMMLadderStrategy';
+import { SashaHybridStrategy } from './strategies/SashaHybridStrategy';
 import { BotMode, BotStats } from './types';
 
 /**
@@ -49,6 +52,11 @@ export class BotManager {
     this.createBot('GridTrading', new GridTradingStrategy());
     this.createBot('MeanReversion', new MeanReversionStrategy());
     this.createBot('TrendFollowing', new TrendFollowingStrategy());
+
+    // Create Sasha bots (migrated from old bot project)
+    this.createBot('Sasha-LiqProviding', new SashaLiqProvidingStrategy());
+    this.createBot('Sasha-MMLadder', new SashaMMLadderStrategy());
+    this.createBot('Sasha-Hybrid', new SashaHybridStrategy());
 
     console.log('Bot Manager initialized');
     console.log(`Created ${this.bots.size} bots: ${Array.from(this.bots.keys()).join(', ')}`);

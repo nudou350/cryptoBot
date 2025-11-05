@@ -63,5 +63,5 @@ export interface MarketData {
   candles: Candle[];
 }
 
-export type StrategyName = 'GridTrading' | 'MeanReversion' | 'TrendFollowing';
+export type StrategyName = 'GridTrading' | 'MeanReversion' | 'TrendFollowing' | 'Sasha-LiqProviding' | 'Sasha-MMLadder' | 'Sasha-Hybrid';
 export type BotMode = 'real' | 'fake';
