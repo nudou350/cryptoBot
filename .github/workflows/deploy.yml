@@ -27,6 +27,10 @@ jobs:
             # Navigate to project directory
             cd ~/cryptoBot || exit 1
 
+            # Stash any local changes before pulling
+            echo "Stashing local changes..."
+            git stash
+
             # Pull latest changes
             echo "Pulling latest changes from GitHub..."
             git pull origin main
