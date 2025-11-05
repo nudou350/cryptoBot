@@ -9,4 +9,4 @@ import './server';
 console.log('Crypto Trading Bot System');
 console.log('========================');
 console.log('Server is starting...');
-console.log('Open http://localhost:3000 in your browser to access the dashboard');
+console.log('Open http://localhost:3001 in your browser to access the dashboard');
