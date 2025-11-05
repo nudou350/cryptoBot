@@ -11,6 +11,11 @@ import { GridTradingOptimizedStrategy } from './strategies/GridTradingOptimizedS
 import { SashaLiqProvidingOptimizedStrategy } from './strategies/SashaLiqProvidingOptimizedStrategy';
 import { SashaMMLadderOptimizedStrategy } from './strategies/SashaMMLadderOptimizedStrategy';
 import { SashaHybridOptimizedStrategy } from './strategies/SashaHybridOptimizedStrategy';
+// Aggressive strategies (Option C - High Frequency)
+import { GridTradingAggressiveStrategy } from './strategies/GridTradingAggressiveStrategy';
+import { SashaLiqProvidingAggressiveStrategy } from './strategies/SashaLiqProvidingAggressiveStrategy';
+import { SashaMMLadderAggressiveStrategy } from './strategies/SashaMMLadderAggressiveStrategy';
+import { SashaHybridAggressiveStrategy } from './strategies/SashaHybridAggressiveStrategy';
 import { BotMode, BotStats } from './types';
 
 /**
@@ -68,6 +73,12 @@ export class BotManager {
     this.createBot('Sasha-LiqProviding-Optimized', new SashaLiqProvidingOptimizedStrategy());
     this.createBot('Sasha-MMLadder-Optimized', new SashaMMLadderOptimizedStrategy());
     this.createBot('Sasha-Hybrid-Optimized', new SashaHybridOptimizedStrategy());
+
+    // Create AGGRESSIVE bots (Option C - High Frequency)
+    this.createBot('GridTrading-Aggressive', new GridTradingAggressiveStrategy());
+    this.createBot('Sasha-LiqProviding-Aggressive', new SashaLiqProvidingAggressiveStrategy());
+    this.createBot('Sasha-MMLadder-Aggressive', new SashaMMLadderAggressiveStrategy());
+    this.createBot('Sasha-Hybrid-Aggressive', new SashaHybridAggressiveStrategy());
 
     console.log('Bot Manager initialized');
     console.log(`Created ${this.bots.size} bots: ${Array.from(this.bots.keys()).join(', ')}`);
