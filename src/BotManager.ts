@@ -2,28 +2,9 @@ import { TradingBot } from './TradingBot';
 import { BinanceWebSocket } from './services/BinanceWebSocket';
 import { GridTradingStrategy } from './strategies/GridTradingStrategy';
 import { MeanReversionStrategy } from './strategies/MeanReversionStrategy';
-import { TrendFollowingStrategy } from './strategies/TrendFollowingStrategy';
-import { SashaLiqProvidingStrategy } from './strategies/SashaLiqProvidingStrategy';
-import { SashaMMLadderStrategy } from './strategies/SashaMMLadderStrategy';
-import { SashaHybridStrategy } from './strategies/SashaHybridStrategy';
-// Optimized strategies (Option B - Balanced)
-import { GridTradingOptimizedStrategy } from './strategies/GridTradingOptimizedStrategy';
-import { SashaLiqProvidingOptimizedStrategy } from './strategies/SashaLiqProvidingOptimizedStrategy';
-import { SashaMMLadderOptimizedStrategy } from './strategies/SashaMMLadderOptimizedStrategy';
 import { SashaHybridOptimizedStrategy } from './strategies/SashaHybridOptimizedStrategy';
-// Aggressive strategies (Option C - High Frequency)
-import { GridTradingAggressiveStrategy } from './strategies/GridTradingAggressiveStrategy';
-import { SashaLiqProvidingAggressiveStrategy } from './strategies/SashaLiqProvidingAggressiveStrategy';
-import { SashaMMLadderAggressiveStrategy } from './strategies/SashaMMLadderAggressiveStrategy';
-import { SashaHybridAggressiveStrategy } from './strategies/SashaHybridAggressiveStrategy';
-// NEW: Advanced EMA and Momentum Strategies
-import { EMACrossoverStrategy } from './strategies/EMACrossoverStrategy';
 import { TripleEMAStrategy } from './strategies/TripleEMAStrategy';
 import { EMARibbonStrategy } from './strategies/EMARibbonStrategy';
-import { EMAMACDStrategy } from './strategies/EMAMACDStrategy';
-import { EMASlopeMomentumStrategy } from './strategies/EMASlopeMomentumStrategy';
-import { ADXTrendStrategy } from './strategies/ADXTrendStrategy';
-import { VolumeBreakoutStrategy } from './strategies/VolumeBreakoutStrategy';
 import { BotMode, BotStats } from './types';
 
 /**
@@ -66,36 +47,12 @@ export class BotManager {
     // Wait for connection
     await this.waitForConnection();
 
-    // Create bots with different strategies
-    this.createBot('GridTrading', new GridTradingStrategy());
+    // Create the 5 winning bots from 3-day testing
     this.createBot('MeanReversion', new MeanReversionStrategy());
-    this.createBot('TrendFollowing', new TrendFollowingStrategy());
-
-    // Create Sasha bots (migrated from old bot project)
-    this.createBot('Sasha-LiqProviding', new SashaLiqProvidingStrategy());
-    this.createBot('Sasha-MMLadder', new SashaMMLadderStrategy());
-    this.createBot('Sasha-Hybrid', new SashaHybridStrategy());
-
-    // Create OPTIMIZED bots (Option B - Balanced optimization)
-    this.createBot('GridTrading-Optimized', new GridTradingOptimizedStrategy());
-    this.createBot('Sasha-LiqProviding-Optimized', new SashaLiqProvidingOptimizedStrategy());
-    this.createBot('Sasha-MMLadder-Optimized', new SashaMMLadderOptimizedStrategy());
     this.createBot('Sasha-Hybrid-Optimized', new SashaHybridOptimizedStrategy());
-
-    // Create AGGRESSIVE bots (Option C - High Frequency)
-    this.createBot('GridTrading-Aggressive', new GridTradingAggressiveStrategy());
-    this.createBot('Sasha-LiqProviding-Aggressive', new SashaLiqProvidingAggressiveStrategy());
-    this.createBot('Sasha-MMLadder-Aggressive', new SashaMMLadderAggressiveStrategy());
-    this.createBot('Sasha-Hybrid-Aggressive', new SashaHybridAggressiveStrategy());
-
-    // Create NEW ADVANCED EMA and MOMENTUM bots
-    this.createBot('EMACrossover', new EMACrossoverStrategy());
+    this.createBot('GridTrading', new GridTradingStrategy());
     this.createBot('TripleEMA', new TripleEMAStrategy());
     this.createBot('EMARibbon', new EMARibbonStrategy());
-    this.createBot('EMAMACD', new EMAMACDStrategy());
-    this.createBot('EMASlopeMomentum', new EMASlopeMomentumStrategy());
-    this.createBot('ADXTrend', new ADXTrendStrategy());
-    this.createBot('VolumeBreakout', new VolumeBreakoutStrategy());
 
     console.log('Bot Manager initialized');
     console.log(`Created ${this.bots.size} bots: ${Array.from(this.bots.keys()).join(', ')}`);
