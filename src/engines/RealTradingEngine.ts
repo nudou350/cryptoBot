@@ -26,7 +26,8 @@ export class RealTradingEngine {
     initialBudget: number,
     botName: string,
     apiKey: string,
-    apiSecret: string
+    apiSecret: string,
+    isTestnet: boolean = false
   ) {
     this.strategy = strategy;
     this.initialBudget = initialBudget;
@@ -34,14 +35,32 @@ export class RealTradingEngine {
     this.logger = new Logger(botName);
 
     // Initialize Binance exchange
-    this.exchange = new ccxt.binance({
+    const exchangeConfig: any = {
       apiKey,
       secret: apiSecret,
       enableRateLimit: true,
       options: {
         defaultType: 'spot'
       }
-    });
+    };
+
+    // Configure for testnet if specified
+    if (isTestnet) {
+      // CCXT uses 'sandbox' mode for testnet
+      exchangeConfig.options.sandbox = true;
+      this.logger.info('Configured for Binance Spot Testnet (Sandbox Mode)');
+      this.logger.info(`API Endpoint: Testnet (sandbox enabled)`);
+    } else {
+      this.logger.info('Configured for Binance Production');
+      this.logger.info(`API Endpoint: Production (https://api.binance.com)`);
+    }
+
+    this.exchange = new ccxt.binance(exchangeConfig);
+
+    // Log the actual URLs being used (for verification)
+    if (this.exchange.urls) {
+      this.logger.info(`Exchange URLs: ${JSON.stringify(this.exchange.urls.api || 'default')}`);
+    }
   }
 
   /**

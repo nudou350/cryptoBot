@@ -11,20 +11,26 @@ export class BinanceWebSocket {
   private candleCallbacks: Set<(candles: Candle[]) => void> = new Set();
   private readonly symbol: string;
   private readonly interval: string;
+  private readonly isTestnet: boolean;
   private isConnected: boolean = false;
 
-  constructor(symbol: string = 'btcusdt', interval: string = '1m') {
+  constructor(symbol: string = 'btcusdt', interval: string = '1m', isTestnet: boolean = false) {
     this.symbol = symbol.toLowerCase();
     this.interval = interval;
+    this.isTestnet = isTestnet;
   }
 
   public connect(): void {
-    const wsUrl = `wss://stream.binance.com:9443/ws/${this.symbol}@kline_${this.interval}`;
+    const baseUrl = this.isTestnet
+      ? 'wss://stream.testnet.binance.vision/ws'
+      : 'wss://stream.binance.com:9443/ws';
+    const wsUrl = `${baseUrl}/${this.symbol}@kline_${this.interval}`;
 
     this.ws = new WebSocket(wsUrl);
 
     this.ws.on('open', () => {
-      console.log(`[WebSocket] Connected to Binance for ${this.symbol.toUpperCase()}`);
+      const env = this.isTestnet ? 'Testnet' : 'Production';
+      console.log(`[WebSocket] Connected to Binance ${env} for ${this.symbol.toUpperCase()}`);
       this.isConnected = true;
       this.startPingPong();
     });
@@ -168,7 +174,10 @@ export class BinanceWebSocket {
   // Fetch historical candles from REST API
   public async fetchHistoricalCandles(limit: number = 100): Promise<void> {
     try {
-      const url = `https://api.binance.com/api/v3/klines?symbol=${this.symbol.toUpperCase()}&interval=${this.interval}&limit=${limit}`;
+      const baseUrl = this.isTestnet
+        ? 'https://testnet.binance.vision/api'
+        : 'https://api.binance.com/api';
+      const url = `${baseUrl}/v3/klines?symbol=${this.symbol.toUpperCase()}&interval=${this.interval}&limit=${limit}`;
       const response = await fetch(url);
       const data: any = await response.json();
 
@@ -185,7 +194,8 @@ export class BinanceWebSocket {
         this.currentPrice = this.candles[this.candles.length - 1].close;
       }
 
-      console.log(`[WebSocket] Fetched ${this.candles.length} historical candles`);
+      const env = this.isTestnet ? 'Testnet' : 'Production';
+      console.log(`[WebSocket] Fetched ${this.candles.length} historical candles from ${env}`);
     } catch (error) {
       console.error('[WebSocket] Error fetching historical candles:', error);
     }

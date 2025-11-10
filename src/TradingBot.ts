@@ -34,10 +34,12 @@ export class TradingBot {
     if (mode === 'fake') {
       this.engine = new FakeTradingEngine(strategy, initialBudget, botName);
     } else {
+      // Both 'real' and 'testnet' modes use RealTradingEngine
       if (!apiKey || !apiSecret) {
-        throw new Error('API key and secret required for real trading mode');
+        throw new Error('API key and secret required for real/testnet trading mode');
       }
-      this.engine = new RealTradingEngine(strategy, initialBudget, botName, apiKey, apiSecret);
+      const isTestnet = mode === 'testnet';
+      this.engine = new RealTradingEngine(strategy, initialBudget, botName, apiKey, apiSecret, isTestnet);
     }
   }
 
@@ -45,7 +47,7 @@ export class TradingBot {
    * Start the bot
    */
   public async start(): Promise<void> {
-    if (this.mode === 'real') {
+    if (this.mode === 'real' || this.mode === 'testnet') {
       await (this.engine as RealTradingEngine).start();
     } else {
       this.engine.start();
@@ -66,7 +68,7 @@ export class TradingBot {
     }
 
     // Stop engine
-    if (this.mode === 'real') {
+    if (this.mode === 'real' || this.mode === 'testnet') {
       await (this.engine as RealTradingEngine).stop();
     } else {
       this.engine.stop();

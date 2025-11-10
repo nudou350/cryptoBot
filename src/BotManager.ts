@@ -26,8 +26,9 @@ export class BotManager {
     this.apiKey = apiKey;
     this.apiSecret = apiSecret;
 
-    // Create shared WebSocket connection
-    this.ws = new BinanceWebSocket('btcusdt', '1m');
+    // Create shared WebSocket connection (testnet for testnet mode)
+    const isTestnet = mode === 'testnet';
+    this.ws = new BinanceWebSocket('btcusdt', '1m', isTestnet);
   }
 
   /**

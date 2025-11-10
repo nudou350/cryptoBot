@@ -64,4 +64,4 @@ export interface MarketData {
 }
 
 export type StrategyName = 'GridTrading' | 'MeanReversion' | 'TrendFollowing' | 'Sasha-LiqProviding' | 'Sasha-MMLadder' | 'Sasha-Hybrid';
-export type BotMode = 'real' | 'fake';
+export type BotMode = 'real' | 'fake' | 'testnet';

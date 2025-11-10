@@ -44,10 +44,10 @@ app.post('/api/initialize', async (req, res) => {
       });
     }
 
-    if (mode === 'real' && (!apiKey || !apiSecret)) {
+    if ((mode === 'real' || mode === 'testnet') && (!apiKey || !apiSecret)) {
       return res.status(400).json({
         success: false,
-        error: 'API key and secret required for real trading mode'
+        error: 'API key and secret required for real/testnet trading mode'
       });
     }
 
