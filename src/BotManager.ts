@@ -37,7 +37,24 @@ export class BotManager {
   public async initialize(): Promise<void> {
     console.log('Initializing Bot Manager...');
     console.log(`Mode: ${this.mode.toUpperCase()}`);
-    console.log(`Initial budget per bot: $${this.initialBudget}`);
+
+    // Define which bots to create
+    const botsToCreate = [
+      { name: 'MeanReversion', strategy: new MeanReversionStrategy() },
+      { name: 'Sasha-Hybrid-Optimized', strategy: new SashaHybridOptimizedStrategy() },
+      { name: 'GridTrading', strategy: new GridTradingStrategy() },
+      { name: 'TripleEMA', strategy: new TripleEMAStrategy() },
+      { name: 'EMARibbon', strategy: new EMARibbonStrategy() },
+    ];
+
+    // Calculate per-bot allocation by splitting total budget
+    const numberOfBots = botsToCreate.length;
+    const budgetPerBot = this.initialBudget / numberOfBots;
+
+    console.log(`Total Budget: $${this.initialBudget}`);
+    console.log(`Number of Bots: ${numberOfBots}`);
+    console.log(`Budget per Bot: $${budgetPerBot.toFixed(2)}`);
+    console.log('---');
 
     // Fetch historical candles first
     await this.ws.fetchHistoricalCandles(100);
@@ -48,15 +65,14 @@ export class BotManager {
     // Wait for connection
     await this.waitForConnection();
 
-    // Create the 5 winning bots from 3-day testing
-    this.createBot('MeanReversion', new MeanReversionStrategy());
-    this.createBot('Sasha-Hybrid-Optimized', new SashaHybridOptimizedStrategy());
-    this.createBot('GridTrading', new GridTradingStrategy());
-    this.createBot('TripleEMA', new TripleEMAStrategy());
-    this.createBot('EMARibbon', new EMARibbonStrategy());
+    // Create all bots with equal allocation
+    for (const { name, strategy } of botsToCreate) {
+      this.createBot(name, strategy, budgetPerBot);
+    }
 
     console.log('Bot Manager initialized');
     console.log(`Created ${this.bots.size} bots: ${Array.from(this.bots.keys()).join(', ')}`);
+    console.log('Each bot operates independently with its allocated budget');
   }
 
   /**
@@ -77,20 +93,20 @@ export class BotManager {
   }
 
   /**
-   * Create a bot with a specific strategy
+   * Create a bot with a specific strategy and allocated budget
    */
-  private createBot(name: string, strategy: any): void {
+  private createBot(name: string, strategy: any, allocatedBudget: number): void {
     const bot = new TradingBot(
       strategy,
       this.mode,
-      this.initialBudget,
+      allocatedBudget,
       this.ws,
       this.apiKey,
       this.apiSecret
     );
 
     this.bots.set(name, bot);
-    console.log(`Created bot: ${name}`);
+    console.log(`Created bot: ${name} with $${allocatedBudget.toFixed(2)} allocation`);
   }
 
   /**

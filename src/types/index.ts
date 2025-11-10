@@ -10,13 +10,15 @@ export interface Candle {
 export interface Order {
   id: string;
   symbol: string;
-  type: 'limit' | 'market' | 'stop-loss';
+  type: 'limit' | 'market' | 'stop-loss' | 'stop_loss_limit';
   side: 'buy' | 'sell';
   price: number;
   amount: number;
   filled: number;
   status: 'open' | 'closed' | 'cancelled' | 'partially_filled';
   timestamp: number;
+  stopPrice?: number;
+  stopLossOrderId?: string;
 }
 
 export interface Position {
@@ -29,6 +31,10 @@ export interface Position {
   stopLoss?: number;
   takeProfit?: number;
   timestamp: number;
+  stopLossOrderId?: string;
+  actualFillPrice?: number;
+  expectedPrice?: number;
+  slippage?: number;
 }
 
 export interface TradeSignal {
@@ -54,6 +60,23 @@ export interface BotStats {
   positions: Position[];
   totalPnL: number;
   currentDrawdown: number;
+  averageSlippage?: number;
+  emergencyStopTriggered?: boolean;
+  lastBalanceCheck?: number;
+  balanceDiscrepancy?: number;
+}
+
+export interface TradeRecord {
+  profit: number;
+  win: boolean;
+  timestamp: number;
+  entryPrice: number;
+  exitPrice: number;
+  actualFillPrice: number;
+  expectedPrice: number;
+  slippage: number;
+  amount: number;
+  reason: string;
 }
 
 export interface MarketData {
