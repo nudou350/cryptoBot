@@ -15,10 +15,11 @@ import { calculateSMA } from '../utils/indicators';
  * - Works best when price stays within a range
  */
 export class GridTradingStrategy extends BaseStrategy {
-  private gridLevels: number = 10;
-  private gridSpacing: number = 0.005; // 0.5% spacing
+  private gridLevels: number = 20; // Increased from 10 to 20 for finer granularity
+  private gridSpacing: number = 0.003; // 0.3% spacing - reduced from 0.5%
   private lastTrade: 'buy' | 'sell' | null = null;
   private lastTradePrice: number = 0;
+  private positionCount: number = 0; // Track how many trades we've made
 
   constructor() {
     super('GridTrading');
@@ -37,59 +38,93 @@ export class GridTradingStrategy extends BaseStrategy {
       return { action: 'hold', price: currentPrice, reason: 'SMA not ready' };
     }
 
-    // Calculate grid boundaries (±5% from SMA)
-    const gridTop = recentSMA * 1.05;
-    const gridBottom = recentSMA * 0.95;
+    // Calculate grid boundaries (±3% from SMA) - Tighter range for more frequent trades
+    const gridTop = recentSMA * 1.03;
+    const gridBottom = recentSMA * 0.97;
     const gridRange = gridTop - gridBottom;
     const spacing = gridRange / this.gridLevels;
 
     // Find current grid level
     const currentLevel = Math.floor((currentPrice - gridBottom) / spacing);
 
-    // Check if we should place a buy order (price at lower grid levels)
-    if (currentLevel <= 3 && this.lastTrade !== 'buy') {
-      const stopLoss = currentPrice * 0.98; // 2% stop loss
-      const takeProfit = currentPrice * 1.015; // 1.5% take profit
+    // Calculate distance from SMA (for better decision making)
+    const distanceFromSMA = ((currentPrice - recentSMA) / recentSMA) * 100;
+
+    // BUY LOGIC - Buy in lower half of grid (levels 0-9 out of 20)
+    // More relaxed: buy when price is below SMA
+    const shouldBuy = currentLevel < 10 && this.lastTrade !== 'buy' && distanceFromSMA < 0;
+
+    if (shouldBuy) {
+      const stopLoss = currentPrice * 0.975; // 2.5% stop loss (more room)
+      const takeProfit = currentPrice * 1.008; // 0.8% take profit (realistic for grid)
 
       this.lastTrade = 'buy';
       this.lastTradePrice = currentPrice;
+      this.positionCount++;
 
       return {
         action: 'buy',
         price: currentPrice,
         stopLoss,
         takeProfit,
-        reason: `Grid buy at level ${currentLevel}/${this.gridLevels}`
+        reason: `Grid buy at level ${currentLevel}/${this.gridLevels} (${distanceFromSMA.toFixed(2)}% from SMA)`
       };
     }
 
-    // Check if we should place a sell order (price at upper grid levels)
-    if (currentLevel >= 7 && this.lastTrade !== 'sell') {
+    // SELL LOGIC - Sell in upper half of grid (levels 11-20 out of 20)
+    // More relaxed: sell when price is above SMA
+    const shouldSell = currentLevel > 10 && this.lastTrade !== 'sell' && distanceFromSMA > 0;
+
+    if (shouldSell) {
       this.lastTrade = 'sell';
       this.lastTradePrice = currentPrice;
 
       return {
         action: 'close',
         price: currentPrice,
-        reason: `Grid sell at level ${currentLevel}/${this.gridLevels} (taking profit)`
+        reason: `Grid sell at level ${currentLevel}/${this.gridLevels} (${distanceFromSMA.toFixed(2)}% from SMA) - taking profit`
       };
     }
 
     // Check if price moved enough from last trade to trade again
+    // More aggressive: reset after just 1 grid spacing (0.3%)
     if (this.lastTradePrice > 0) {
       const priceChangePercent = Math.abs((currentPrice - this.lastTradePrice) / this.lastTradePrice);
 
-      if (priceChangePercent >= this.gridSpacing * 2) {
-        // Reset to allow new trades
+      // Reset after moving just 0.4% (less than before)
+      if (priceChangePercent >= 0.004) {
         this.lastTrade = null;
       }
     }
 
-    // Hold if no grid signal
+    // Also reset if we're on the opposite side of SMA from last trade
+    if (this.lastTrade === 'buy' && distanceFromSMA > 0.5) {
+      this.lastTrade = null; // Price moved above SMA, can buy again when it drops
+    } else if (this.lastTrade === 'sell' && distanceFromSMA < -0.5) {
+      this.lastTrade = null; // Price moved below SMA, can sell again when it rises
+    }
+
+    // Hold if no grid signal - Provide detailed reason
+    let holdReason = '';
+
+    if (currentLevel < 10 && distanceFromSMA >= 0) {
+      holdReason = `At level ${currentLevel}/${this.gridLevels} but price above SMA (+${distanceFromSMA.toFixed(2)}%) - waiting for dip`;
+    } else if (currentLevel > 10 && distanceFromSMA <= 0) {
+      holdReason = `At level ${currentLevel}/${this.gridLevels} but price below SMA (${distanceFromSMA.toFixed(2)}%) - waiting for rise`;
+    } else if (currentLevel === 10) {
+      holdReason = `At middle level ${currentLevel}/${this.gridLevels}, near SMA - waiting for clear direction`;
+    } else if (this.lastTrade === 'buy') {
+      holdReason = `Recently bought, waiting ${(0.004 * 100).toFixed(1)}% price move to reset (${this.positionCount} trades made)`;
+    } else if (this.lastTrade === 'sell') {
+      holdReason = `Recently sold, waiting ${(0.004 * 100).toFixed(1)}% price move to reset (${this.positionCount} trades made)`;
+    } else {
+      holdReason = `At level ${currentLevel}/${this.gridLevels} (${distanceFromSMA.toFixed(2)}% from SMA), monitoring...`;
+    }
+
     return {
       action: 'hold',
       price: currentPrice,
-      reason: `Price at grid level ${currentLevel}/${this.gridLevels}, waiting for better entry`
+      reason: holdReason
     };
   }
 
@@ -99,5 +134,6 @@ export class GridTradingStrategy extends BaseStrategy {
   public reset(): void {
     this.lastTrade = null;
     this.lastTradePrice = 0;
+    this.positionCount = 0;
   }
 }
