@@ -94,8 +94,15 @@ export class EMARibbonStrategy extends BaseStrategy {
     const readyForEntry = ribbonAligned && nearEMA && hasGoodVolume && !overextended;
 
     if (readyForEntry && (expanding || volumeSurge)) {
-      const stopLoss = ema21[idx] - (atr[idx] * this.atrMultiplierSL);
+      // CRITICAL FIX: Calculate stop loss from entry price, not EMA21
+      // This ensures consistent risk management regardless of EMA position
+      const stopLoss = currentPrice - (atr[idx] * this.atrMultiplierSL);
       const takeProfit = currentPrice + (atr[idx] * this.atrMultiplierTP);
+
+      // Calculate actual risk/reward ratio for logging
+      const risk = currentPrice - stopLoss;
+      const reward = takeProfit - currentPrice;
+      const riskRewardRatio = reward / risk;
 
       const bounceType = bounceAtEMA8 ? 'EMA8' : (bounceAtEMA13 ? 'EMA13' : 'EMA zone');
 
@@ -104,7 +111,7 @@ export class EMARibbonStrategy extends BaseStrategy {
         price: currentPrice,
         stopLoss,
         takeProfit,
-        reason: `EMA Ribbon BUY: Stack aligned, ribbon ${expanding ? 'expanding' : 'stable'} (${currentWidth.toFixed(2)}%), near ${bounceType}, Vol=${(candles[idx].volume/avgVolume[idx]).toFixed(2)}x`
+        reason: `EMA Ribbon BUY: Stack aligned, ribbon ${expanding ? 'expanding' : 'stable'} (${currentWidth.toFixed(2)}%), near ${bounceType}, Vol=${(candles[idx].volume/avgVolume[idx]).toFixed(2)}x [R:R 1:${riskRewardRatio.toFixed(1)}]`
       };
     }
 

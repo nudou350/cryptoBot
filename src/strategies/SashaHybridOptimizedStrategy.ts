@@ -108,15 +108,16 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
         this.entryLevel = currentLevel;
         this.positionScale = this.gridLevels[currentLevel].sizeMultiplier;
 
-        const stopLoss = currentPrice * 0.98; // 2% stop
-        const takeProfit = currentPrice * 1.02; // 2% target
+        // CRITICAL FIX: Improved risk/reward ratio (1:2) for profitability after fees
+        const stopLoss = currentPrice * 0.985; // 1.5% stop
+        const takeProfit = currentPrice * 1.030; // 3.0% target (1:2 ratio)
 
         return {
           action: 'buy',
           price: currentPrice,
           stopLoss,
           takeProfit,
-          reason: `Sasha-Hybrid: Ranging entry at level ${currentLevel} (RSI: ${rsi.toFixed(1)}) [OPTIMIZED]`
+          reason: `Sasha-Hybrid: Ranging entry at level ${currentLevel} (RSI: ${rsi.toFixed(1)}) [R:R 1:2]`
         };
       }
 
@@ -139,15 +140,16 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
         this.entryLevel = currentLevel;
         this.positionScale = this.gridLevels[currentLevel].sizeMultiplier;
 
-        const stopLoss = currentPrice * 0.975; // 2.5% stop
-        const takeProfit = currentPrice * 1.03; // 3% target
+        // CRITICAL FIX: Improved risk/reward ratio (1:2.33) for trending markets
+        const stopLoss = currentPrice * 0.985; // 1.5% stop
+        const takeProfit = currentPrice * 1.035; // 3.5% target (1:2.33 ratio)
 
         return {
           action: 'buy',
           price: currentPrice,
           stopLoss,
           takeProfit,
-          reason: `Sasha-Hybrid: Trending entry at level ${currentLevel} (pullback) [OPTIMIZED]`
+          reason: `Sasha-Hybrid: Trending entry at level ${currentLevel} (pullback) [R:R 1:2.33]`
         };
       }
 
@@ -185,25 +187,25 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
 
     // EXIT CONDITIONS
 
-    // 1. Take profit based on market regime
+    // 1. Take profit based on market regime (updated to match new risk/reward)
     if (this.marketRegime === 'ranging') {
-      // In ranging: quick profit at 1.5%
-      if (profitPercent >= 1.5 || levelsMoved >= 3) {
+      // In ranging: take profit at 2.8%+ (slightly before 3% target to secure gains)
+      if (profitPercent >= 2.8 || levelsMoved >= 4) {
         this.reset();
         return {
           action: 'close',
           price: currentPrice,
-          reason: `Sasha-Hybrid: Ranging profit (${profitPercent.toFixed(2)}%, +${levelsMoved} levels) [OPTIMIZED]`
+          reason: `Sasha-Hybrid: Ranging profit (${profitPercent.toFixed(2)}%, +${levelsMoved} levels)`
         };
       }
     } else if (this.marketRegime === 'trending') {
-      // In trending: let it run further
-      if (profitPercent >= 2.5 || levelsMoved >= 5) {
+      // In trending: let it run to 3.3%+ (slightly before 3.5% target)
+      if (profitPercent >= 3.3 || levelsMoved >= 5) {
         this.reset();
         return {
           action: 'close',
           price: currentPrice,
-          reason: `Sasha-Hybrid: Trending profit (${profitPercent.toFixed(2)}%, +${levelsMoved} levels) [OPTIMIZED]`
+          reason: `Sasha-Hybrid: Trending profit (${profitPercent.toFixed(2)}%, +${levelsMoved} levels)`
         };
       }
     }
@@ -228,8 +230,8 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
       };
     }
 
-    // 4. Stop loss
-    if (profitPercent <= -2.0) {
+    // 4. Stop loss (updated to match new 1.5% stop)
+    if (profitPercent <= -1.5) {
       this.reset();
       return {
         action: 'close',

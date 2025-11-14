@@ -55,8 +55,10 @@ export class GridTradingStrategy extends BaseStrategy {
     const shouldBuy = currentLevel < 10 && this.lastTrade !== 'buy' && distanceFromSMA < 0;
 
     if (shouldBuy) {
-      const stopLoss = currentPrice * 0.975; // 2.5% stop loss (more room)
-      const takeProfit = currentPrice * 1.008; // 0.8% take profit (realistic for grid)
+      // CRITICAL FIX: Proper risk/reward ratio (1:2) accounting for 0.2% fees
+      // Need to win bigger than we lose to be profitable after fees
+      const stopLoss = currentPrice * 0.988; // 1.2% stop loss
+      const takeProfit = currentPrice * 1.024; // 2.4% take profit (1:2 ratio)
 
       this.lastTrade = 'buy';
       this.lastTradePrice = currentPrice;
@@ -67,7 +69,7 @@ export class GridTradingStrategy extends BaseStrategy {
         price: currentPrice,
         stopLoss,
         takeProfit,
-        reason: `Grid buy at level ${currentLevel}/${this.gridLevels} (${distanceFromSMA.toFixed(2)}% from SMA)`
+        reason: `Grid buy at level ${currentLevel}/${this.gridLevels} (${distanceFromSMA.toFixed(2)}% from SMA) [R:R 1:2]`
       };
     }
 

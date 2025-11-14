@@ -72,15 +72,22 @@ export class TripleEMAStrategy extends BaseStrategy {
 
     // BUY Signal
     if (bullishStack && pullbackBounce && macdBullish && rsiValid && priceAboveEMA55) {
-      const stopLoss = Math.min(ema55[idx], currentPrice - atr[idx] * this.atrMultiplierSL);
+      // CRITICAL FIX: Calculate stop loss from entry price for consistent risk management
+      // Using EMA55 could result in very large stop losses if EMA55 is far below
+      const stopLoss = currentPrice - (atr[idx] * this.atrMultiplierSL);
       const takeProfit = currentPrice + (atr[idx] * this.atrMultiplierTP);
+
+      // Calculate actual risk/reward ratio
+      const risk = currentPrice - stopLoss;
+      const reward = takeProfit - currentPrice;
+      const riskRewardRatio = reward / risk;
 
       return {
         action: 'buy',
         price: currentPrice,
         stopLoss,
         takeProfit,
-        reason: `Triple EMA BUY: Bullish stack confirmed, pullback bounce at EMA21, RSI=${rsi[idx].toFixed(1)}, MACD bullish`
+        reason: `Triple EMA BUY: Bullish stack confirmed, pullback bounce at EMA21, RSI=${rsi[idx].toFixed(1)}, MACD bullish [R:R 1:${riskRewardRatio.toFixed(1)}]`
       };
     }
 

@@ -641,8 +641,13 @@ export class RealTradingEngine {
 
       this.positions.push(position);
       const actualPositionValue = actualFillAmount * actualFillPrice;
-      this.currentBudget -= actualPositionValue;
-      this.expectedBalance -= actualPositionValue;
+
+      // CRITICAL FIX: Deduct entry fee from budget
+      const entryFeeRate = 0.001; // 0.1% Binance fee
+      const entryFee = actualPositionValue * entryFeeRate;
+
+      this.currentBudget -= (actualPositionValue + entryFee);
+      this.expectedBalance -= (actualPositionValue + entryFee);
 
       // CRITICAL: Place exchange-enforced stop loss order if specified
       if (signal.stopLoss) {
@@ -722,11 +727,20 @@ export class RealTradingEngine {
       }
 
       const positionValue = actualFillAmount * actualFillPrice;
-      const profit = positionValue - (position.amount * position.entryPrice);
+
+      // CRITICAL FIX: Deduct trading fees (0.1% per trade = 0.2% round trip)
+      // Binance spot trading fees: 0.1% (or 0.075% with BNB discount)
+      const feeRate = 0.001; // 0.1% per trade
+      const entryFee = (position.amount * position.entryPrice) * feeRate;
+      const exitFee = positionValue * feeRate;
+      const totalFees = entryFee + exitFee;
+
+      const grossProfit = positionValue - (position.amount * position.entryPrice);
+      const profit = grossProfit - totalFees; // Net profit after fees
       const profitPercent = (profit / (position.amount * position.entryPrice)) * 100;
 
-      this.currentBudget += positionValue;
-      this.expectedBalance += positionValue;
+      this.currentBudget += positionValue - exitFee; // Deduct exit fee from budget
+      this.expectedBalance += positionValue - exitFee;
       this.currentRealBalance += profit; // Update real balance with profit/loss
 
       // Record comprehensive trade data
@@ -747,7 +761,8 @@ export class RealTradingEngine {
 
       this.logger.trade(
         `SELL FILLED: ${actualFillAmount.toFixed(8)} BTC @ $${actualFillPrice.toFixed(2)} | ` +
-        `PnL: $${profit.toFixed(2)} (${profitPercent > 0 ? '+' : ''}${profitPercent.toFixed(2)}%) | ` +
+        `Gross: $${grossProfit.toFixed(2)} | Fees: $${totalFees.toFixed(2)} | ` +
+        `Net PnL: $${profit.toFixed(2)} (${profitPercent > 0 ? '+' : ''}${profitPercent.toFixed(2)}%) | ` +
         `Entry: $${position.entryPrice.toFixed(2)} | ` +
         `Reason: ${reason} | Order ID: ${order.id}`
       );
