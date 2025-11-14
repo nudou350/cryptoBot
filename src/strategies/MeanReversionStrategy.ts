@@ -12,7 +12,7 @@ import { calculateBollingerBands, calculateRSI } from '../utils/indicators';
  * Strategy:
  * - Buy when price touches lower Bollinger Band AND RSI < 30 (oversold)
  * - Sell when price touches upper Bollinger Band AND RSI > 70 (overbought)
- * - Use 2:1 reward-risk ratio
+ * - Use 1:3 risk-reward ratio (2% SL, 6% TP)
  */
 export class MeanReversionStrategy extends BaseStrategy {
   private readonly bbPeriod: number = 20;
@@ -30,6 +30,16 @@ export class MeanReversionStrategy extends BaseStrategy {
 
     if (!this.hasEnoughData(candles, requiredCandles)) {
       return { action: 'hold', price: currentPrice, reason: 'Insufficient data' };
+
+    // COOLDOWN CHECK: Prevent overtrading (15 min minimum between trades)
+    if (!this.canTradeAgain()) {
+      const remainingMin = this.getRemainingCooldown();
+      return {
+        action: 'hold',
+        price: currentPrice,
+        reason: `Trade cooldown active: ${remainingMin} min remaining (prevents overtrading)`
+      };
+    }
     }
 
     // Calculate indicators
@@ -52,9 +62,10 @@ export class MeanReversionStrategy extends BaseStrategy {
     const isOversold = currentRSI < this.oversoldThreshold;
 
     if (nearLowerBand && isOversold) {
-      const stopLoss = currentPrice * 0.98; // 2% stop loss
-      const targetProfit = (currentPrice - stopLoss) * 2; // 2:1 reward-risk
-      const takeProfit = currentPrice + targetProfit;
+      const stopLoss = currentPrice * 0.98; // 2% stop loss (same)
+      const takeProfit = currentPrice * 1.06; // 6% take profit (1:3 R/R ratio after fees)
+      // OLD: const targetProfit = (currentPrice - stopLoss) * 2; // 2:1 reward-risk
+      // OLD: const takeProfit = currentPrice + targetProfit;
 
       return {
         action: 'buy',

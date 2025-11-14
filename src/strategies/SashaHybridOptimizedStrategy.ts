@@ -27,8 +27,8 @@ import { calculateEMA, calculateRSI, calculateSMA } from '../utils/indicators';
  * - Smart position management based on volatility
  */
 export class SashaHybridOptimizedStrategy extends BaseStrategy {
-  private readonly baseGridSpacing: number = 0.0015; // 0.15% base spacing
-  private readonly numberOfLevels: number = 8;
+  private readonly baseGridSpacing: number = 0.008; // 0.8% spacing (increased from 0.15% to reduce frequency)
+  private readonly numberOfLevels: number = 5; // Reduced from 8 to 5 to decrease trade frequency
   private readonly basePositionPercent: number = 0.06; // 6% base position
 
   private gridLevels: Array<{ price: number; sizeMultiplier: number }> = [];
@@ -46,6 +46,16 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
   public analyze(candles: Candle[], currentPrice: number): TradeSignal {
     if (!this.hasEnoughData(candles, 50)) {
       return { action: 'hold', price: currentPrice, reason: 'Insufficient data' };
+
+    // COOLDOWN CHECK: Prevent overtrading (15 min minimum between trades)
+    if (!this.canTradeAgain()) {
+      const remainingMin = this.getRemainingCooldown();
+      return {
+        action: 'hold',
+        price: currentPrice,
+        reason: `Trade cooldown active: ${remainingMin} min remaining (prevents overtrading)`
+      };
+    }
     }
 
     // Detect market regime
@@ -109,15 +119,15 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
         this.positionScale = this.gridLevels[currentLevel].sizeMultiplier;
 
         // CRITICAL FIX: Improved risk/reward ratio (1:2) for profitability after fees
-        const stopLoss = currentPrice * 0.985; // 1.5% stop
-        const takeProfit = currentPrice * 1.030; // 3.0% target (1:2 ratio)
+        const stopLoss = currentPrice * 0.982; // 1.8% stop (increased for 1:3 R/R)
+        const takeProfit = currentPrice * 1.054; // 5.4% target (1:3 R/R ratio after fees)
 
         return {
           action: 'buy',
           price: currentPrice,
           stopLoss,
           takeProfit,
-          reason: `Sasha-Hybrid: Ranging entry at level ${currentLevel} (RSI: ${rsi.toFixed(1)}) [R:R 1:2]`
+          reason: `Sasha-Hybrid: Ranging entry at level ${currentLevel} (RSI: ${rsi.toFixed(1)}) [R:R 1:3]`
         };
       }
 
@@ -141,15 +151,15 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
         this.positionScale = this.gridLevels[currentLevel].sizeMultiplier;
 
         // CRITICAL FIX: Improved risk/reward ratio (1:2.33) for trending markets
-        const stopLoss = currentPrice * 0.985; // 1.5% stop
-        const takeProfit = currentPrice * 1.035; // 3.5% target (1:2.33 ratio)
+        const stopLoss = currentPrice * 0.982; // 1.8% stop (increased for 1:3 R/R)
+        const takeProfit = currentPrice * 1.054; // 5.4% target (1:3 R/R ratio after fees)
 
         return {
           action: 'buy',
           price: currentPrice,
           stopLoss,
           takeProfit,
-          reason: `Sasha-Hybrid: Trending entry at level ${currentLevel} (pullback) [R:R 1:2.33]`
+          reason: `Sasha-Hybrid: Trending entry at level ${currentLevel} (pullback) [R:R 1:3]`
         };
       }
 
@@ -190,7 +200,7 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
     // 1. Take profit based on market regime (updated to match new risk/reward)
     if (this.marketRegime === 'ranging') {
       // In ranging: take profit at 2.8%+ (slightly before 3% target to secure gains)
-      if (profitPercent >= 2.8 || levelsMoved >= 4) {
+      if (profitPercent >= 5.0 || levelsMoved >= 3) { // Adjusted for new R/R and fewer levels
         this.reset();
         return {
           action: 'close',
@@ -200,7 +210,7 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
       }
     } else if (this.marketRegime === 'trending') {
       // In trending: let it run to 3.3%+ (slightly before 3.5% target)
-      if (profitPercent >= 3.3 || levelsMoved >= 5) {
+      if (profitPercent >= 5.0 || levelsMoved >= 3) { // Adjusted for new R/R and fewer levels
         this.reset();
         return {
           action: 'close',
@@ -231,7 +241,7 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
     }
 
     // 4. Stop loss (updated to match new 1.5% stop)
-    if (profitPercent <= -1.5) {
+    if (profitPercent <= -1.8) { // Updated to match new stop loss
       this.reset();
       return {
         action: 'close',

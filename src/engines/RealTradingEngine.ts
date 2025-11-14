@@ -45,6 +45,11 @@ export class RealTradingEngine {
   private slippageHistory: number[] = [];
   private connectionHealthy: boolean = false;
   private lastConnectionCheck: number = 0;
+  // Consecutive loss protection
+  private consecutiveLosses: number = 0;
+  private readonly MAX_CONSECUTIVE_LOSSES: number = 3; // Stop trading after 3 losses
+  private readonly REDUCE_SIZE_AFTER_LOSSES: number = 2; // Reduce position size after 2 losses
+  private positionSizeMultiplier: number = 1.0; // Starts at 1.0, reduces to 0.5 after 2 losses
 
   constructor(
     strategy: BaseStrategy,
@@ -538,6 +543,16 @@ export class RealTradingEngine {
    * Execute a buy order with fill verification and slippage monitoring
    */
   private async executeBuy(signal: TradeSignal, currentPrice: number): Promise<void> {
+    // CONSECUTIVE LOSS PROTECTION: Stop trading after 3 consecutive losses
+    if (this.consecutiveLosses >= this.MAX_CONSECUTIVE_LOSSES) {
+      this.logger.warn('══════════════════════════════════════════════════════════');
+      this.logger.warn('   CONSECUTIVE LOSS PROTECTION TRIGGERED');
+      this.logger.warn('══════════════════════════════════════════════════════════');
+      this.logger.warn(`Consecutive losses: ${this.consecutiveLosses}`);
+      this.logger.warn('Stopping trading until manual intervention');
+      this.logger.warn('══════════════════════════════════════════════════════════');
+      return;
+    }
     // Don't open new position if we already have one
     if (this.positions.length > 0) {
       this.logger.debug('Already have open position, skipping buy signal');
@@ -545,9 +560,20 @@ export class RealTradingEngine {
     }
 
     try {
-      // Calculate position size
-      const maxPositionValue = this.currentBudget * 0.10;
-      const positionValue = Math.min(maxPositionValue, this.currentBudget * 0.08);
+      // CONSECUTIVE LOSS PROTECTION: Stop trading after 3 consecutive losses
+    if (this.consecutiveLosses >= this.MAX_CONSECUTIVE_LOSSES) {
+      this.logger.warn('══════════════════════════════════════════════════════════');
+      this.logger.warn('   CONSECUTIVE LOSS PROTECTION TRIGGERED');
+      this.logger.warn('══════════════════════════════════════════════════════════');
+      this.logger.warn(`Consecutive losses: ${this.consecutiveLosses}`);
+      this.logger.warn('Stopping trading until manual intervention');
+      this.logger.warn('══════════════════════════════════════════════════════════');
+      return;
+    }
+
+    // Calculate position size
+      const maxPositionValue = this.currentBudget * 0.15; // 15% max (increased from 10%)
+      const positionValue = Math.min(maxPositionValue, this.currentBudget * 0.12) * this.positionSizeMultiplier; // 12% default * multiplier (0.5 after 2 losses, 1.0 normal)
       const amount = positionValue / currentPrice;
 
       // Round amount to exchange precision
@@ -643,11 +669,13 @@ export class RealTradingEngine {
       const actualPositionValue = actualFillAmount * actualFillPrice;
 
       // CRITICAL FIX: Deduct entry fee from budget
-      const entryFeeRate = 0.001; // 0.1% Binance fee
+      const entryFeeRate = 0.00075; // 0.075% Binance fee with BNB discount (25% off)
       const entryFee = actualPositionValue * entryFeeRate;
 
       this.currentBudget -= (actualPositionValue + entryFee);
       this.expectedBalance -= (actualPositionValue + entryFee);
+      // Record trade time for cooldown (15 min minimum between trades)
+      this.strategy.recordTrade();
 
       // CRITICAL: Place exchange-enforced stop loss order if specified
       if (signal.stopLoss) {
@@ -730,7 +758,7 @@ export class RealTradingEngine {
 
       // CRITICAL FIX: Deduct trading fees (0.1% per trade = 0.2% round trip)
       // Binance spot trading fees: 0.1% (or 0.075% with BNB discount)
-      const feeRate = 0.001; // 0.1% per trade
+      const feeRate = 0.00075; // 0.075% per trade with BNB discount (25% off)
       const entryFee = (position.amount * position.entryPrice) * feeRate;
       const exitFee = positionValue * feeRate;
       const totalFees = entryFee + exitFee;
@@ -758,6 +786,28 @@ export class RealTradingEngine {
       };
 
       this.tradeHistory.push(tradeRecord);
+
+      // CONSECUTIVE LOSS PROTECTION: Track wins and losses
+      if (profit > 0) {
+        // Winning trade - reset consecutive losses and position size multiplier
+        this.consecutiveLosses = 0;
+        this.positionSizeMultiplier = 1.0;
+        this.logger.info(`✓ Win! Consecutive losses reset. Position size back to normal.`);
+      } else {
+        // Losing trade - increment counter and potentially reduce position size
+        this.consecutiveLosses++;
+        this.logger.warn(`✗ Loss! Consecutive losses: ${this.consecutiveLosses}/${this.MAX_CONSECUTIVE_LOSSES}`);
+
+        if (this.consecutiveLosses >= this.REDUCE_SIZE_AFTER_LOSSES) {
+          this.positionSizeMultiplier = 0.5;
+          this.logger.warn(`⚠ Position size reduced to 50% after ${this.consecutiveLosses} consecutive losses`);
+        }
+
+        if (this.consecutiveLosses >= this.MAX_CONSECUTIVE_LOSSES) {
+          this.logger.error(`🛑 MAXIMUM CONSECUTIVE LOSSES REACHED! Trading will be paused.`);
+        }
+      }
+
 
       this.logger.trade(
         `SELL FILLED: ${actualFillAmount.toFixed(8)} BTC @ $${actualFillPrice.toFixed(2)} | ` +

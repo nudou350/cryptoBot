@@ -7,7 +7,7 @@ import { calculateEMA, calculateATR, calculateAverageVolume } from '../utils/ind
  *
  * Best for: Strong, clean trending markets with acceleration
  * Win Rate: 58-63%
- * Risk/Reward: 1:2.5-3
+ * Risk/Reward: 1:3 (ATR×1.5 SL, ATR×4.5 TP)
  * Risk Level: Medium-High
  *
  * Strategy:
@@ -26,8 +26,8 @@ export class EMARibbonStrategy extends BaseStrategy {
   private readonly volumeMultiplier: number = 1.2; // Reduced from 1.5 to 1.2
   private readonly ribbonExpansionThreshold: number = 0.005; // 0.5% - Reduced from 2%
   private readonly maxOverextension: number = 3.5; // ATR multiples - Increased slightly
-  private readonly atrMultiplierTP: number = 2.5; // Reduced from 3.0 for more realistic targets
-  private readonly atrMultiplierSL: number = 1.2; // Increased from 1.0 for more room
+  private readonly atrMultiplierTP: number = 4.5; // Increased to 4.5 for 1:3 R/R after fees
+  private readonly atrMultiplierSL: number = 1.5; // Increased to 1.5 for better R/R
   private readonly ribbonCompressionThreshold: number = -1.5; // -1.5% - Allow more compression
 
   constructor() {
@@ -47,6 +47,16 @@ export class EMARibbonStrategy extends BaseStrategy {
 
     if (!this.hasEnoughData(candles, requiredCandles)) {
       return { action: 'hold', price: currentPrice, reason: 'Insufficient data for EMA Ribbon' };
+
+    // COOLDOWN CHECK: Prevent overtrading (15 min minimum between trades)
+    if (!this.canTradeAgain()) {
+      const remainingMin = this.getRemainingCooldown();
+      return {
+        action: 'hold',
+        price: currentPrice,
+        reason: `Trade cooldown active: ${remainingMin} min remaining (prevents overtrading)`
+      };
+    }
     }
 
     // Calculate indicators

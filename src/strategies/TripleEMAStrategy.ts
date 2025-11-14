@@ -7,7 +7,7 @@ import { calculateEMA, calculateRSI, calculateMACD, calculateATR } from '../util
  *
  * Best for: Strong trending markets with pullbacks
  * Win Rate: 60-65%
- * Risk/Reward: 1:2.5
+ * Risk/Reward: 1:3 (ATR×1.5 SL, ATR×4.5 TP)
  * Risk Level: Medium
  *
  * Strategy:
@@ -24,8 +24,8 @@ export class TripleEMAStrategy extends BaseStrategy {
   private readonly atrPeriod: number = 14;
   private readonly rsiLower: number = 45;
   private readonly rsiUpper: number = 70;
-  private readonly atrMultiplierTP: number = 2.5;
-  private readonly atrMultiplierSL: number = 1.0;
+  private readonly atrMultiplierTP: number = 4.5; // Increased from 2.5 to 4.5 for 1:3 R/R
+  private readonly atrMultiplierSL: number = 1.5; // Increased from 1.0 to 1.5 for better R/R
 
   constructor() {
     super('TripleEMA');
@@ -36,6 +36,16 @@ export class TripleEMAStrategy extends BaseStrategy {
 
     if (!this.hasEnoughData(candles, requiredCandles)) {
       return { action: 'hold', price: currentPrice, reason: 'Insufficient data for Triple EMA' };
+
+    // COOLDOWN CHECK: Prevent overtrading (15 min minimum between trades)
+    if (!this.canTradeAgain()) {
+      const remainingMin = this.getRemainingCooldown();
+      return {
+        action: 'hold',
+        price: currentPrice,
+        reason: `Trade cooldown active: ${remainingMin} min remaining (prevents overtrading)`
+      };
+    }
     }
 
     // Calculate indicators

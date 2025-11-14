@@ -21,6 +21,8 @@ export class BotManager {
   private apiSecret?: string;
 
   constructor(mode: BotMode, initialBudget: number, apiKey?: string, apiSecret?: string) {
+    // NOTE: initialBudget is TOTAL budget for ALL bots, will be split equally
+    // Example: initialBudget=2500 with 5 bots = $500 per bot
     this.mode = mode;
     this.initialBudget = initialBudget;
     this.apiKey = apiKey;

@@ -12,6 +12,7 @@ console.log('Open http://localhost:3001 in your browser to access the dashboard'
 
 // Auto-initialize bot manager if credentials are provided in .env
 const tradingMode = (process.env.TRADING_MODE || 'fake') as BotMode;
+// NOTE: INITIAL_BUDGET should be TOTAL budget for ALL bots (e.g., 2500 for 5 bots = $500/bot)
 const initialBudget = parseInt(process.env.INITIAL_BUDGET || '500');
 const apiKey = process.env.BINANCE_API_KEY;
 const apiSecret = process.env.BINANCE_API_SECRET;
@@ -25,7 +26,7 @@ if ((tradingMode === 'testnet' || tradingMode === 'real') && apiKey && apiSecret
   console.log('AUTO-INITIALIZATION');
   console.log('======================');
   console.log(`Mode: ${tradingMode.toUpperCase()}`);
-  console.log(`Budget: $${initialBudget} per bot`);
+  console.log(`Total Budget: $${initialBudget} (will be divided among bots)`);
   console.log(`Environment: ${tradingMode === 'testnet' ? 'Binance Spot Testnet' : 'Binance Production'}`);
   console.log('\nInitializing bots...\n');
 
