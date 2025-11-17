@@ -30,6 +30,7 @@ export class MeanReversionStrategy extends BaseStrategy {
 
     if (!this.hasEnoughData(candles, requiredCandles)) {
       return { action: 'hold', price: currentPrice, reason: 'Insufficient data' };
+    }
 
     // COOLDOWN CHECK: Prevent overtrading (15 min minimum between trades)
     if (!this.canTradeAgain()) {
@@ -39,7 +40,6 @@ export class MeanReversionStrategy extends BaseStrategy {
         price: currentPrice,
         reason: `Trade cooldown active: ${remainingMin} min remaining (prevents overtrading)`
       };
-    }
     }
 
     // Calculate indicators
@@ -62,17 +62,17 @@ export class MeanReversionStrategy extends BaseStrategy {
     const isOversold = currentRSI < this.oversoldThreshold;
 
     if (nearLowerBand && isOversold) {
-      const stopLoss = currentPrice * 0.98; // 2% stop loss (same)
-      const takeProfit = currentPrice * 1.06; // 6% take profit (1:3 R/R ratio after fees)
-      // OLD: const targetProfit = (currentPrice - stopLoss) * 2; // 2:1 reward-risk
-      // OLD: const takeProfit = currentPrice + targetProfit;
+      // OPTIMIZED: Risk/reward ratio 1:2.5 for better profitability
+      // Risk 2.0% to make 5.0% (after 0.2% fees = 1.8% risk, 4.8% reward = 1:2.67)
+      const stopLoss = currentPrice * 0.98; // 2.0% stop loss
+      const takeProfit = currentPrice * 1.05; // 5.0% take profit
 
       return {
         action: 'buy',
         price: currentPrice,
         stopLoss,
         takeProfit,
-        reason: `Mean reversion BUY: Price at lower BB (${lowerBand.toFixed(2)}), RSI=${currentRSI.toFixed(2)}`
+        reason: `Mean reversion BUY: Price at lower BB (${lowerBand.toFixed(2)}), RSI=${currentRSI.toFixed(2)} [R:R 1:2.5]`
       };
     }
 

@@ -64,10 +64,11 @@ export class GridTradingStrategy extends BaseStrategy {
     const shouldBuy = currentLevel < 5 && this.lastTrade !== 'buy' && distanceFromSMA < 0;
 
     if (shouldBuy) {
-      // CRITICAL FIX: Proper risk/reward ratio (1:2) accounting for 0.2% fees
-      // Need to win bigger than we lose to be profitable after fees
-      const stopLoss = currentPrice * 0.985; // 1.5% stop loss (increased from 1.2%)
-      const takeProfit = currentPrice * 1.045; // 4.5% take profit (1:3 R/R ratio after fees)
+      // OPTIMIZED: Better risk/reward ratio (1:2.5) accounting for fees
+      // Binance fees: 0.1% maker, 0.1% taker = 0.2% total round-trip
+      // Risk 2.0% to make 5.0% = 1:2.5 R/R (after fees: 1.8% risk, 4.8% reward = 1:2.67)
+      const stopLoss = currentPrice * 0.98; // 2.0% stop loss
+      const takeProfit = currentPrice * 1.05; // 5.0% take profit
 
       this.lastTrade = 'buy';
       this.lastTradePrice = currentPrice;
@@ -78,7 +79,7 @@ export class GridTradingStrategy extends BaseStrategy {
         price: currentPrice,
         stopLoss,
         takeProfit,
-        reason: `Grid buy at level ${currentLevel}/${this.gridLevels} (${distanceFromSMA.toFixed(2)}% from SMA) [R:R 1:3]`
+        reason: `Grid buy at level ${currentLevel}/${this.gridLevels} (${distanceFromSMA.toFixed(2)}% from SMA) [R:R 1:2.5]`
       };
     }
 

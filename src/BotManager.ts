@@ -45,8 +45,6 @@ export class BotManager {
       { name: 'MeanReversion', strategy: new MeanReversionStrategy() },
       { name: 'Sasha-Hybrid-Optimized', strategy: new SashaHybridOptimizedStrategy() },
       { name: 'GridTrading', strategy: new GridTradingStrategy() },
-      { name: 'TripleEMA', strategy: new TripleEMAStrategy() },
-      { name: 'EMARibbon', strategy: new EMARibbonStrategy() },
     ];
 
     // Calculate per-bot allocation by splitting total budget
