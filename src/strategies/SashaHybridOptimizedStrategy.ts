@@ -199,36 +199,23 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
 
     // EXIT CONDITIONS
 
-    // 1. Take profit based on market regime (updated to match new 5% target)
-    if (this.marketRegime === 'ranging') {
-      // In ranging: take profit at 4.5%+ (slightly before 5% target to secure gains)
-      if (profitPercent >= 4.5 || levelsMoved >= 3) {
-        this.reset();
-        return {
-          action: 'close',
-          price: currentPrice,
-          reason: `Sasha-Hybrid: Ranging profit (${profitPercent.toFixed(2)}%, +${levelsMoved} levels)`
-        };
-      }
-    } else if (this.marketRegime === 'trending') {
-      // In trending: let it run to 4.8%+ (slightly before 5% target)
-      if (profitPercent >= 4.8 || levelsMoved >= 3) {
-        this.reset();
-        return {
-          action: 'close',
-          price: currentPrice,
-          reason: `Sasha-Hybrid: Trending profit (${profitPercent.toFixed(2)}%, +${levelsMoved} levels)`
-        };
-      }
-    }
-
-    // 2. RSI overbought - take profit
-    if (rsi > 70 && profitPercent > 0.5) {
+    // 1. Take profit at 4.5% (unified for all market regimes - no premature levelsMoved exits)
+    if (profitPercent >= 4.5) {
       this.reset();
       return {
         action: 'close',
         price: currentPrice,
-        reason: `Sasha-Hybrid: RSI overbought exit (${rsi.toFixed(1)}, profit: ${profitPercent.toFixed(2)}%)`
+        reason: `Sasha-Hybrid: TP +${profitPercent.toFixed(2)}% (${this.marketRegime})`
+      };
+    }
+
+    // 2. RSI overbought - take profit ONLY if profit > 3% (was 0.5% - caused terrible R:R)
+    if (rsi > 70 && profitPercent > 3.0) {
+      this.reset();
+      return {
+        action: 'close',
+        price: currentPrice,
+        reason: `Sasha-Hybrid: RSI exit +${profitPercent.toFixed(2)}% (RSI: ${rsi.toFixed(1)})`
       };
     }
 

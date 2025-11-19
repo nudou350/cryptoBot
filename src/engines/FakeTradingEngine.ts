@@ -97,9 +97,11 @@ export class FakeTradingEngine {
       return;
     }
 
-    // Calculate position size (max 10% of budget)
-    const maxPositionValue = this.currentBudget * 0.10;
-    const positionValue = Math.min(maxPositionValue, this.currentBudget * 0.08); // Use 8% typically
+    // Calculate position size (max 40% of budget for meaningful profits)
+    // With $500 budget: 30% = $150 per trade
+    // This allows $7.50 profit on 5% win (vs $2 with 8%)
+    const maxPositionValue = this.currentBudget * 0.40;
+    const positionValue = Math.min(maxPositionValue, this.currentBudget * 0.30); // Use 30% typically
     const amount = positionValue / currentPrice;
 
     // Check if we have enough budget
