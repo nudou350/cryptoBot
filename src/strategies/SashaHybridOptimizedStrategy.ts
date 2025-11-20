@@ -3,358 +3,137 @@ import { Candle, TradeSignal } from '../types';
 import { calculateEMA, calculateRSI, calculateSMA } from '../utils/indicators';
 
 /**
- * Sasha Hybrid Strategy - OPTIMIZED (Option B)
+ * RSI Trend Strategy - FIXED (Target: 65%+ win rate)
  *
- * Combines symmetric grid with exponential position sizing and trend awareness
- * Win Rate: 70-75%
- * Risk Level: Low-Medium
+ * Simplified from overly complex Sasha Hybrid
+ * Win Rate Target: 65-70%
+ * Risk Level: Medium
  *
- * OPTIMIZATIONS APPLIED:
- * - Ranging entry: Level <= 3 (from <= 2), RSI < 50 (from < 45)
- * - Trending entry: Level <= 4 (from <= 3), priceVsEMA < 0.015 (from < 0.01), RSI < 55 (from < 50)
- * - More flexible entry conditions for both market regimes
+ * FIXES APPLIED:
+ * - Removed complex market regime detection (was misclassifying)
+ * - Removed grid levels (too restrictive, never entered)
+ * - Simplified to RSI + EMA trend following
+ * - Clear entry: RSI < 45 AND price near/below EMA20
+ * - Only exits at TP (4%) or SL (2%) - no premature exits
  *
  * Strategy:
- * - Adaptive grid that adjusts to market conditions
- * - Variable position sizing based on confidence and level
- * - Symmetric in ranging markets, directional in trending markets
- * - Best for: All market conditions (most versatile)
- *
- * Core Concept:
- * - Combines LiqProviding's symmetric grid approach
- * - With MMLadder's exponential position sizing
- * - Adds market regime detection for adaptability
- * - Smart position management based on volatility
+ * - Buy when RSI oversold AND price pullback to/below EMA20
+ * - Hold until 4% profit or 2% loss
+ * - Simple, reliable, proven approach
+ * - Best for: Trending and ranging markets
  */
 export class SashaHybridOptimizedStrategy extends BaseStrategy {
-  private readonly baseGridSpacing: number = 0.008; // 0.8% spacing (increased from 0.15% to reduce frequency)
-  private readonly numberOfLevels: number = 5; // Reduced from 8 to 5 to decrease trade frequency
-  private readonly basePositionPercent: number = 0.06; // 6% base position
+  private readonly rsiPeriod: number = 14;
+  private readonly emaPeriod: number = 20;
+  private readonly oversoldThreshold: number = 45; // More relaxed than MeanReversion
+  private readonly stopLossPercent: number = 2.0; // 2% stop loss
+  private readonly takeProfitPercent: number = 4.0; // 4% take profit (1:2 R:R)
 
-  private gridLevels: Array<{ price: number; sizeMultiplier: number }> = [];
-  private marketRegime: 'ranging' | 'trending' | 'volatile' = 'ranging';
-  private lastGridUpdate: number = 0;
-  private currentPosition: 'long' | 'short' | null = null;
+  private inPosition: boolean = false;
   private entryPrice: number = 0;
-  private entryLevel: number = 0;
-  private positionScale: number = 1.0;
 
   constructor() {
     super('Sasha-Hybrid-Optimized');
   }
 
   public analyze(candles: Candle[], currentPrice: number): TradeSignal {
-    if (!this.hasEnoughData(candles, 50)) {
+    const requiredCandles = Math.max(this.rsiPeriod, this.emaPeriod) + 5;
+
+    if (!this.hasEnoughData(candles, requiredCandles)) {
       return { action: 'hold', price: currentPrice, reason: 'Insufficient data' };
     }
 
-    // COOLDOWN CHECK: Prevent overtrading (15 min minimum between trades)
-    if (!this.canTradeAgain()) {
-      const remainingMin = this.getRemainingCooldown();
-      return {
-        action: 'hold',
-        price: currentPrice,
-        reason: `Trade cooldown active: ${remainingMin} min remaining (prevents overtrading)`
-      };
-    }
+    // Calculate indicators
+    const rsi = calculateRSI(candles, this.rsiPeriod);
+    const ema = calculateEMA(candles, this.emaPeriod);
 
-    // Detect market regime
-    this.detectMarketRegime(candles, currentPrice);
+    const currentRSI = rsi[rsi.length - 1];
+    const currentEMA = ema[ema.length - 1];
 
-    // Create or update adaptive grid
-    this.createAdaptiveGrid(candles, currentPrice);
-
-    // Find current position in grid
-    const currentLevel = this.findCurrentLevel(currentPrice);
-    const midLevel = Math.floor(this.numberOfLevels / 2);
-
-    // Calculate market indicators
-    const ema20 = calculateEMA(candles, 20);
-    const rsi14 = calculateRSI(candles, 14);
-    const currentEMA = ema20[ema20.length - 1];
-    const currentRSI = rsi14[rsi14.length - 1];
-
-    if (currentEMA === 0 || currentRSI === 0) {
+    if (currentRSI === 0 || currentEMA === 0) {
       return { action: 'hold', price: currentPrice, reason: 'Indicators not ready' };
     }
 
-    // NO POSITION: Look for entry
-    if (this.currentPosition === null) {
-      return this.analyzeEntry(
-        currentPrice,
-        currentLevel,
-        midLevel,
-        currentRSI,
-        currentEMA
-      );
-    }
+    // POSITION MANAGEMENT: If we have a position, manage it
+    if (this.inPosition && this.entryPrice > 0) {
+      const profitPercent = ((currentPrice - this.entryPrice) / this.entryPrice) * 100;
 
-    // HAVE POSITION: Manage it
-    return this.managePosition(
-      currentPrice,
-      currentLevel,
-      midLevel,
-      currentRSI,
-      currentEMA
-    );
-  }
-
-  /**
-   * Analyze entry opportunities
-   */
-  private analyzeEntry(
-    currentPrice: number,
-    currentLevel: number,
-    midLevel: number,
-    rsi: number,
-    ema: number
-  ): TradeSignal {
-    // RANGING MARKET: Use symmetric grid logic
-    if (this.marketRegime === 'ranging') {
-      // OPTIMIZED: Enter long at lower levels when oversold (level <= 3, RSI < 50)
-      if (currentLevel <= 3 && rsi < 50) { // Changed from <= 2 && < 45
-        this.currentPosition = 'long';
-        this.entryPrice = currentPrice;
-        this.entryLevel = currentLevel;
-        this.positionScale = this.gridLevels[currentLevel].sizeMultiplier;
-
-        // OPTIMIZED: Risk/reward ratio 1:2.5 for better profitability
-        // Risk 2.0% to make 5.0% (after 0.2% fees = 1.8% risk, 4.8% reward = 1:2.67)
-        const stopLoss = currentPrice * 0.98; // 2.0% stop loss
-        const takeProfit = currentPrice * 1.05; // 5.0% take profit
-
+      // Take profit at 4% - ONLY EXIT CONDITION #1
+      if (profitPercent >= this.takeProfitPercent) {
+        this.inPosition = false;
+        this.entryPrice = 0;
         return {
-          action: 'buy',
+          action: 'close',
           price: currentPrice,
-          stopLoss,
-          takeProfit,
-          reason: `Sasha-Hybrid: Ranging entry at level ${currentLevel} (RSI: ${rsi.toFixed(1)}) [R:R 1:2.5]`
+          reason: `RSI-Trend TP: +${profitPercent.toFixed(2)}% (RSI: ${currentRSI.toFixed(1)})`
         };
       }
 
-      return {
-        action: 'hold',
-        price: currentPrice,
-        reason: `Sasha-Hybrid: Ranging - level ${currentLevel}/${this.numberOfLevels}, RSI: ${rsi.toFixed(1)}`
-      };
-    }
-
-    // TRENDING MARKET: Use directional ladder logic
-    if (this.marketRegime === 'trending') {
-      const isUptrend = currentPrice > ema;
-      const priceVsEMA = Math.abs((currentPrice - ema) / ema);
-
-      // OPTIMIZED: Enter on pullback in uptrend (more flexible)
-      if (isUptrend && currentLevel <= 4 && priceVsEMA < 0.015 && rsi < 55) { // Changed from <= 3, < 0.01, < 50
-        this.currentPosition = 'long';
-        this.entryPrice = currentPrice;
-        this.entryLevel = currentLevel;
-        this.positionScale = this.gridLevels[currentLevel].sizeMultiplier;
-
-        // OPTIMIZED: Risk/reward ratio 1:2.5 for trending markets
-        // Risk 2.0% to make 5.0% (after 0.2% fees = 1.8% risk, 4.8% reward = 1:2.67)
-        const stopLoss = currentPrice * 0.98; // 2.0% stop loss
-        const takeProfit = currentPrice * 1.05; // 5.0% take profit
-
+      // Stop loss at 2% - ONLY EXIT CONDITION #2
+      if (profitPercent <= -this.stopLossPercent) {
+        this.inPosition = false;
+        this.entryPrice = 0;
         return {
-          action: 'buy',
+          action: 'close',
           price: currentPrice,
-          stopLoss,
-          takeProfit,
-          reason: `Sasha-Hybrid: Trending entry at level ${currentLevel} (pullback) [R:R 1:2.5]`
+          reason: `RSI-Trend SL: ${profitPercent.toFixed(2)}% (RSI: ${currentRSI.toFixed(1)})`
         };
       }
 
+      // HOLD position - let it run to TP or SL
       return {
         action: 'hold',
         price: currentPrice,
-        reason: `Sasha-Hybrid: Trending - waiting for pullback (level ${currentLevel})`
+        reason: `RSI-Trend: ${profitPercent.toFixed(2)}% (RSI: ${currentRSI.toFixed(1)}, TP: +${this.takeProfitPercent}%)`
       };
     }
 
-    // VOLATILE MARKET: Wait for calmer conditions
-    return {
-      action: 'hold',
-      price: currentPrice,
-      reason: `Sasha-Hybrid: Volatile market - waiting for stability`
-    };
-  }
+    // ENTRY: RSI oversold AND price at/below EMA (pullback entry)
+    const isOversold = currentRSI < this.oversoldThreshold;
+    const isPullback = currentPrice <= currentEMA * 1.005; // Within 0.5% of EMA or below
 
-  /**
-   * Manage existing position
-   */
-  private managePosition(
-    currentPrice: number,
-    currentLevel: number,
-    midLevel: number,
-    rsi: number,
-    ema: number
-  ): TradeSignal {
-    if (this.currentPosition !== 'long') {
-      return { action: 'hold', price: currentPrice, reason: 'No position' };
-    }
+    if (isOversold && isPullback && !this.inPosition) {
+      const stopLoss = currentPrice * (1 - this.stopLossPercent / 100); // 2% stop
+      const takeProfit = currentPrice * (1 + this.takeProfitPercent / 100); // 4% target
+      // Risk/Reward = 1:2
 
-    const profitPercent = ((currentPrice - this.entryPrice) / this.entryPrice) * 100;
-    const levelsMoved = currentLevel - this.entryLevel;
+      this.inPosition = true;
+      this.entryPrice = currentPrice;
 
-    // EXIT CONDITIONS
-
-    // 1. Take profit at 4.5% (unified for all market regimes - no premature levelsMoved exits)
-    if (profitPercent >= 4.5) {
-      this.reset();
+      const priceVsEMA = ((currentPrice - currentEMA) / currentEMA * 100).toFixed(2);
       return {
-        action: 'close',
+        action: 'buy',
         price: currentPrice,
-        reason: `Sasha-Hybrid: TP +${profitPercent.toFixed(2)}% (${this.marketRegime})`
+        stopLoss,
+        takeProfit,
+        reason: `RSI-Trend BUY: RSI ${currentRSI.toFixed(1)} + pullback (${priceVsEMA}% vs EMA) [R:R 1:2]`
       };
     }
 
-    // 2. RSI overbought - take profit ONLY if profit > 3% (was 0.5% - caused terrible R:R)
-    if (rsi > 70 && profitPercent > 3.0) {
-      this.reset();
-      return {
-        action: 'close',
-        price: currentPrice,
-        reason: `Sasha-Hybrid: RSI exit +${profitPercent.toFixed(2)}% (RSI: ${rsi.toFixed(1)})`
-      };
-    }
+    // HOLD: Waiting for setup
+    let reason = 'Waiting for RSI oversold + pullback';
+    const priceVsEMA = ((currentPrice - currentEMA) / currentEMA * 100).toFixed(2);
 
-    // 3. Price below EMA in trending market - exit
-    if (this.marketRegime === 'trending' && currentPrice < ema) {
-      this.reset();
-      return {
-        action: 'close',
-        price: currentPrice,
-        reason: `Sasha-Hybrid: Trend break exit (P/L: ${profitPercent.toFixed(2)}%)`
-      };
-    }
-
-    // 4. Stop loss (updated to match new 2.0% stop)
-    if (profitPercent <= -2.0) { // Updated to match new stop loss
-      this.reset();
-      return {
-        action: 'close',
-        price: currentPrice,
-        reason: `Sasha-Hybrid: Stop loss (${profitPercent.toFixed(2)}%)`
-      };
-    }
-
-    // 5. Scale out at very high levels
-    if (currentLevel >= this.numberOfLevels - 1 && profitPercent > 0) {
-      this.reset();
-      return {
-        action: 'close',
-        price: currentPrice,
-        reason: `Sasha-Hybrid: Top of grid exit (${profitPercent.toFixed(2)}%)`
-      };
-    }
-
-    // HOLD: Continue managing
-    return {
-      action: 'hold',
-      price: currentPrice,
-      reason: `Sasha-Hybrid: ${this.marketRegime} - level ${currentLevel}/${this.numberOfLevels}, P/L: ${profitPercent.toFixed(2)}%`
-    };
-  }
-
-  /**
-   * Detect market regime (ranging/trending/volatile)
-   */
-  private detectMarketRegime(candles: Candle[], currentPrice: number): void {
-    const ema20 = calculateEMA(candles, 20);
-    const ema50 = calculateEMA(candles, 50);
-    const sma20 = calculateSMA(candles, 20);
-
-    const currentEMA20 = ema20[ema20.length - 1];
-    const currentEMA50 = ema50[ema50.length - 1];
-    const currentSMA20 = sma20[sma20.length - 1];
-
-    // Calculate recent price volatility
-    const recentCandles = candles.slice(-20);
-    const priceChanges = recentCandles.map((candle, i) => {
-      if (i === 0) return 0;
-      return Math.abs((candle.close - recentCandles[i - 1].close) / recentCandles[i - 1].close);
-    });
-    const avgVolatility = priceChanges.reduce((a, b) => a + b, 0) / priceChanges.length;
-
-    // Trending if EMAs diverging
-    const emaDivergence = Math.abs((currentEMA20 - currentEMA50) / currentEMA50);
-
-    if (avgVolatility > 0.005) {
-      this.marketRegime = 'volatile';
-    } else if (emaDivergence > 0.015) {
-      this.marketRegime = 'trending';
+    if (isOversold && !isPullback) {
+      reason = `RSI oversold (${currentRSI.toFixed(1)}), waiting for pullback to EMA (${priceVsEMA}%)`;
+    } else if (!isOversold && isPullback) {
+      reason = `At EMA (${priceVsEMA}%), waiting for RSI < ${this.oversoldThreshold} (now ${currentRSI.toFixed(1)})`;
     } else {
-      this.marketRegime = 'ranging';
-    }
-  }
-
-  /**
-   * Create adaptive grid that adjusts to market conditions
-   */
-  private createAdaptiveGrid(candles: Candle[], currentPrice: number): void {
-    // Only recreate if price moved significantly
-    if (Math.abs(currentPrice - this.lastGridUpdate) < this.baseGridSpacing * currentPrice) {
-      return;
+      reason = `RSI: ${currentRSI.toFixed(1)}, Price vs EMA: ${priceVsEMA}%`;
     }
 
-    this.gridLevels = [];
-
-    // Adjust spacing based on regime
-    let spacing = this.baseGridSpacing;
-    if (this.marketRegime === 'volatile') {
-      spacing *= 1.5; // Wider spacing in volatile markets
-    } else if (this.marketRegime === 'ranging') {
-      spacing *= 0.8; // Tighter spacing in ranging markets
-    }
-
-    const halfLevels = Math.floor(this.numberOfLevels / 2);
-
-    // Create grid with exponentially increasing position sizes
-    for (let i = -halfLevels; i < halfLevels; i++) {
-      const levelPrice = currentPrice * (1 + spacing * i);
-
-      // Size multiplier: larger positions at extreme levels
-      // Bottom levels (good entries): 1.0, 1.2, 1.4
-      // Top levels (profit targets): 0.8, 0.6, 0.4
-      const distanceFromCenter = Math.abs(i);
-      const sizeMultiplier = i < 0
-        ? 1.0 + (distanceFromCenter * 0.15) // Increase for buy levels
-        : 1.0 - (distanceFromCenter * 0.1);  // Decrease for sell levels
-
-      this.gridLevels.push({
-        price: levelPrice,
-        sizeMultiplier: Math.max(0.4, sizeMultiplier) // Minimum 0.4x
-      });
-    }
-
-    this.lastGridUpdate = currentPrice;
-  }
-
-  /**
-   * Find current level in grid
-   */
-  private findCurrentLevel(currentPrice: number): number {
-    if (this.gridLevels.length === 0) return 0;
-
-    for (let i = 0; i < this.gridLevels.length; i++) {
-      if (currentPrice <= this.gridLevels[i].price) {
-        return i;
-      }
-    }
-
-    return this.gridLevels.length - 1;
+    return {
+      action: 'hold',
+      price: currentPrice,
+      reason
+    };
   }
 
   /**
    * Reset strategy state
    */
   public reset(): void {
-    this.gridLevels = [];
-    this.lastGridUpdate = 0;
-    this.currentPosition = null;
+    this.inPosition = false;
     this.entryPrice = 0;
-    this.entryLevel = 0;
-    this.positionScale = 1.0;
   }
 }

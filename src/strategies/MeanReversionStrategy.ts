@@ -3,29 +3,30 @@ import { Candle, TradeSignal } from '../types';
 import { calculateBollingerBands, calculateRSI } from '../utils/indicators';
 
 /**
- * Mean Reversion Strategy (65-70% win rate)
+ * Mean Reversion Strategy - FIXED (Target: 65%+ win rate)
  *
- * Best for: Ranging markets, oversold/overbought conditions
- * Win Rate: 65-70%
+ * Best for: All market conditions (RSI-based entries work everywhere)
+ * Win Rate Target: 65-70%
  * Risk Level: Medium
  *
  * Strategy:
- * - Buy when price touches lower Bollinger Band AND RSI < 35 (oversold)
- * - Sell when price reaches take profit OR RSI > 65 (with profit)
- * - Use 1:2 risk-reward ratio (2% SL, 4% TP)
+ * - Buy when RSI < 40 (relaxed oversold condition)
+ * - Exit ONLY at take profit (5%) OR stop loss (2%)
+ * - NO premature exits - let winners run!
+ * - Risk/reward ratio 1:2.5 (2% SL, 5% TP)
  *
- * OPTIMIZED:
- * - Tracks entry price for accurate P/L calculation
- * - RSI thresholds adjusted (35/65) for more signals
- * - Faster 4% take profit for better turnover
- * - Multiple exit conditions that require being in profit
+ * FIXES APPLIED:
+ * - Removed Bollinger Bands requirement (too restrictive)
+ * - Relaxed RSI from 35 to 40 (more entry opportunities)
+ * - Removed ALL premature exit conditions (1.5%, 2%, middle band exits)
+ * - Only exits at full TP or SL - proper risk management
+ * - Removed cooldown (was blocking good setups)
  */
 export class MeanReversionStrategy extends BaseStrategy {
-  private readonly bbPeriod: number = 20;
-  private readonly bbStdDev: number = 2;
   private readonly rsiPeriod: number = 14;
-  private readonly oversoldThreshold: number = 35; // Raised from 30 for more signals
-  private readonly overboughtThreshold: number = 65; // Lowered from 70 for faster exits
+  private readonly oversoldThreshold: number = 40; // Relaxed for more entries
+  private readonly stopLossPercent: number = 2.0; // 2% stop loss
+  private readonly takeProfitPercent: number = 5.0; // 5% take profit (1:2.5 R:R)
 
   private entryPrice: number = 0;
   private inPosition: boolean = false;
@@ -35,43 +36,27 @@ export class MeanReversionStrategy extends BaseStrategy {
   }
 
   public analyze(candles: Candle[], currentPrice: number): TradeSignal {
-    const requiredCandles = Math.max(this.bbPeriod, this.rsiPeriod) + 5;
+    const requiredCandles = this.rsiPeriod + 5;
 
     if (!this.hasEnoughData(candles, requiredCandles)) {
       return { action: 'hold', price: currentPrice, reason: 'Insufficient data' };
     }
 
-    // COOLDOWN CHECK: Prevent overtrading (15 min minimum between trades)
-    if (!this.canTradeAgain()) {
-      const remainingMin = this.getRemainingCooldown();
-      return {
-        action: 'hold',
-        price: currentPrice,
-        reason: `Trade cooldown active: ${remainingMin} min remaining`
-      };
-    }
-
-    // Calculate indicators
-    const bb = calculateBollingerBands(candles, this.bbPeriod, this.bbStdDev);
+    // Calculate RSI
     const rsi = calculateRSI(candles, this.rsiPeriod);
+    const currentRSI = rsi[rsi.length - 1];
 
-    const lastIndex = candles.length - 1;
-    const upperBand = bb.upper[lastIndex];
-    const middleBand = bb.middle[lastIndex];
-    const lowerBand = bb.lower[lastIndex];
-    const currentRSI = rsi[lastIndex];
-
-    // Check if indicators are ready
-    if (upperBand === 0 || lowerBand === 0 || currentRSI === 0) {
-      return { action: 'hold', price: currentPrice, reason: 'Indicators not ready' };
+    // Check if RSI is ready
+    if (currentRSI === 0) {
+      return { action: 'hold', price: currentPrice, reason: 'RSI not ready' };
     }
 
     // POSITION MANAGEMENT: If we have a position, manage it
     if (this.inPosition && this.entryPrice > 0) {
       const profitPercent = ((currentPrice - this.entryPrice) / this.entryPrice) * 100;
 
-      // Take profit at 4% (faster turnover than 5%)
-      if (profitPercent >= 4.0) {
+      // Take profit at 5% - ONLY EXIT CONDITION #1
+      if (profitPercent >= this.takeProfitPercent) {
         this.inPosition = false;
         this.entryPrice = 0;
         return {
@@ -81,54 +66,32 @@ export class MeanReversionStrategy extends BaseStrategy {
         };
       }
 
-      // Stop loss at 2%
-      if (profitPercent <= -2.0) {
+      // Stop loss at 2% - ONLY EXIT CONDITION #2
+      if (profitPercent <= -this.stopLossPercent) {
         this.inPosition = false;
         this.entryPrice = 0;
         return {
           action: 'close',
           price: currentPrice,
-          reason: `MeanRev SL: ${profitPercent.toFixed(2)}%`
+          reason: `MeanRev SL: ${profitPercent.toFixed(2)}% (RSI: ${currentRSI.toFixed(1)})`
         };
       }
 
-      // EXIT on RSI overbought (only if in profit > 2%!)
-      if (currentRSI > this.overboughtThreshold && profitPercent > 2.0) {
-        this.inPosition = false;
-        this.entryPrice = 0;
-        return {
-          action: 'close',
-          price: currentPrice,
-          reason: `MeanRev RSI exit: +${profitPercent.toFixed(2)}% (RSI: ${currentRSI.toFixed(1)})`
-        };
-      }
-
-      // EXIT when price returns to middle band (only if in profit > 1.5%!)
-      if (currentPrice >= middleBand && profitPercent > 1.5) {
-        this.inPosition = false;
-        this.entryPrice = 0;
-        return {
-          action: 'close',
-          price: currentPrice,
-          reason: `MeanRev middle band: +${profitPercent.toFixed(2)}%`
-        };
-      }
-
+      // HOLD position - let it run to TP or SL
       return {
         action: 'hold',
         price: currentPrice,
-        reason: `MeanRev: ${profitPercent.toFixed(2)}% (RSI: ${currentRSI.toFixed(1)}, target: +4%)`
+        reason: `MeanRev: ${profitPercent.toFixed(2)}% (RSI: ${currentRSI.toFixed(1)}, TP: +${this.takeProfitPercent}%)`
       };
     }
 
-    // ENTRY: Near lower band AND oversold
-    const nearLowerBand = currentPrice <= lowerBand * 1.005; // Within 0.5% of lower band
+    // ENTRY: Simple RSI oversold condition
     const isOversold = currentRSI < this.oversoldThreshold;
 
-    if (nearLowerBand && isOversold && !this.inPosition) {
-      const stopLoss = currentPrice * 0.98; // 2% stop
-      const takeProfit = currentPrice * 1.04; // 4% target
-      // Risk/Reward = 1:2
+    if (isOversold && !this.inPosition) {
+      const stopLoss = currentPrice * (1 - this.stopLossPercent / 100); // 2% stop
+      const takeProfit = currentPrice * (1 + this.takeProfitPercent / 100); // 5% target
+      // Risk/Reward = 1:2.5
 
       this.inPosition = true;
       this.entryPrice = currentPrice;
@@ -138,19 +101,19 @@ export class MeanReversionStrategy extends BaseStrategy {
         price: currentPrice,
         stopLoss,
         takeProfit,
-        reason: `MeanRev BUY: Lower BB (RSI: ${currentRSI.toFixed(1)}) [R:R 1:2]`
+        reason: `MeanRev BUY: RSI ${currentRSI.toFixed(1)} (oversold) [R:R 1:2.5, SL: -${this.stopLossPercent}%, TP: +${this.takeProfitPercent}%]`
       };
     }
 
-    // HOLD: Waiting for setup
-    let reason = 'Waiting for mean reversion setup';
+    // HOLD: Waiting for oversold condition
+    let reason = 'Waiting for RSI oversold';
 
-    if (currentRSI < 40) {
-      reason = `Approaching oversold (RSI: ${currentRSI.toFixed(1)})`;
+    if (currentRSI < 45) {
+      reason = `Approaching entry (RSI: ${currentRSI.toFixed(1)}, need < ${this.oversoldThreshold})`;
     } else if (currentRSI > 60) {
-      reason = `Approaching overbought (RSI: ${currentRSI.toFixed(1)})`;
+      reason = `Overbought zone (RSI: ${currentRSI.toFixed(1)})`;
     } else {
-      reason = `Neutral zone (RSI: ${currentRSI.toFixed(1)})`;
+      reason = `Neutral (RSI: ${currentRSI.toFixed(1)}, need < ${this.oversoldThreshold})`;
     }
 
     return {

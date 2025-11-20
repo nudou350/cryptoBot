@@ -3,117 +3,95 @@ import { Candle, TradeSignal } from '../types';
 import { calculateSMA } from '../utils/indicators';
 
 /**
- * Grid Trading Strategy (70-75% win rate)
+ * Grid Trading Strategy - FIXED (Target: 65%+ win rate)
  *
- * Best for: Ranging/sideways markets
- * Win Rate: 70-75%
- * Risk Level: Low
+ * Best for: Ranging/sideways markets (most crypto conditions)
+ * Win Rate Target: 65-75%
+ * Risk Level: Low-Medium
+ *
+ * FIXES APPLIED:
+ * - Removed restrictive distance requirement (was -0.3% from SMA)
+ * - Simplified grid to just buy low/sell high around SMA
+ * - More frequent entries (buy when price < SMA, no level restrictions)
+ * - Clear exits at 3% profit or 2% loss (1:1.5 R:R but high win rate compensates)
  *
  * Strategy:
- * - Sets up a grid of buy and sell orders
- * - Profits from price oscillations
- * - Works best when price stays within a range
- *
- * OPTIMIZED:
- * - Tracks entry price for accurate P/L calculation
- * - Faster 3% take profit for better turnover
- * - Tighter 1.5% stop loss
- * - Risk/Reward: 1:2
+ * - Buy when price is below 20-period SMA (simple mean reversion)
+ * - Exit at 3% profit or 2% loss
+ * - Best for choppy/ranging markets where price oscillates around SMA
  */
 export class GridTradingStrategy extends BaseStrategy {
-  private gridLevels: number = 15; // Increased from 10 for more granular entries
-  private lastTrade: 'buy' | 'sell' | null = null;
-  private entryPrice: number = 0; // Track actual entry price
-  private positionCount: number = 0;
+  private readonly smaPeriod: number = 20;
+  private readonly stopLossPercent: number = 2.0; // 2% stop loss
+  private readonly takeProfitPercent: number = 3.0; // 3% take profit (1:1.5 R:R)
+
+  private inPosition: boolean = false;
+  private entryPrice: number = 0;
 
   constructor() {
     super('GridTrading');
   }
 
   public analyze(candles: Candle[], currentPrice: number): TradeSignal {
-    if (!this.hasEnoughData(candles, 50)) {
+    const requiredCandles = this.smaPeriod + 5;
+
+    if (!this.hasEnoughData(candles, requiredCandles)) {
       return { action: 'hold', price: currentPrice, reason: 'Insufficient data' };
     }
 
-    // COOLDOWN CHECK: Prevent overtrading (15 min minimum between trades)
-    if (!this.canTradeAgain()) {
-      const remainingMin = this.getRemainingCooldown();
-      return {
-        action: 'hold',
-        price: currentPrice,
-        reason: `Trade cooldown active: ${remainingMin} min remaining`
-      };
-    }
+    // Calculate SMA
+    const sma = calculateSMA(candles, this.smaPeriod);
+    const currentSMA = sma[sma.length - 1];
 
-    // Calculate SMA for grid center
-    const sma50 = calculateSMA(candles, 50);
-    const recentSMA = sma50[sma50.length - 1];
-
-    if (recentSMA === 0) {
+    if (currentSMA === 0) {
       return { action: 'hold', price: currentPrice, reason: 'SMA not ready' };
     }
 
-    // Dynamic grid based on 2% range (tighter for faster turnover)
-    const gridTop = recentSMA * 1.02;
-    const gridBottom = recentSMA * 0.98;
-    const gridRange = gridTop - gridBottom;
-    const spacing = gridRange / this.gridLevels;
-    const currentLevel = Math.floor((currentPrice - gridBottom) / spacing);
-    const distanceFromSMA = ((currentPrice - recentSMA) / recentSMA) * 100;
+    const distanceFromSMA = ((currentPrice - currentSMA) / currentSMA) * 100;
 
     // POSITION MANAGEMENT: If we have a position, manage it
-    if (this.lastTrade === 'buy' && this.entryPrice > 0) {
+    if (this.inPosition && this.entryPrice > 0) {
       const profitPercent = ((currentPrice - this.entryPrice) / this.entryPrice) * 100;
 
-      // Take profit at 3% (faster turnover than 5%)
-      if (profitPercent >= 3.0) {
-        this.lastTrade = 'sell';
-        this.positionCount++;
+      // Take profit at 3% - ONLY EXIT CONDITION #1
+      if (profitPercent >= this.takeProfitPercent) {
+        this.inPosition = false;
+        this.entryPrice = 0;
         return {
           action: 'close',
           price: currentPrice,
-          reason: `Grid TP: +${profitPercent.toFixed(2)}% (${this.positionCount} trades)`
+          reason: `Grid TP: +${profitPercent.toFixed(2)}% (${distanceFromSMA.toFixed(2)}% vs SMA)`
         };
       }
 
-      // Stop loss at 1.5%
-      if (profitPercent <= -1.5) {
-        this.lastTrade = 'sell';
-        this.positionCount++;
+      // Stop loss at 2% - ONLY EXIT CONDITION #2
+      if (profitPercent <= -this.stopLossPercent) {
+        this.inPosition = false;
+        this.entryPrice = 0;
         return {
           action: 'close',
           price: currentPrice,
-          reason: `Grid SL: ${profitPercent.toFixed(2)}%`
+          reason: `Grid SL: ${profitPercent.toFixed(2)}% (${distanceFromSMA.toFixed(2)}% vs SMA)`
         };
       }
 
-      // Exit if moved to upper grid (take profit early if in profit)
-      if (currentLevel > 10 && profitPercent > 1.0) {
-        this.lastTrade = 'sell';
-        this.positionCount++;
-        return {
-          action: 'close',
-          price: currentPrice,
-          reason: `Grid upper exit lvl ${currentLevel}, +${profitPercent.toFixed(2)}%`
-        };
-      }
-
+      // HOLD position - let it run to TP or SL
       return {
         action: 'hold',
         price: currentPrice,
-        reason: `In position: ${profitPercent.toFixed(2)}% | Lvl ${currentLevel}/15 | Target: +3%`
+        reason: `Grid: ${profitPercent.toFixed(2)}% (${distanceFromSMA.toFixed(2)}% from SMA, TP: +${this.takeProfitPercent}%)`
       };
     }
 
-    // ENTRY: Buy in lower third of grid (levels 0-5)
-    const shouldBuy = currentLevel <= 5 && this.lastTrade !== 'buy' && distanceFromSMA < -0.3;
+    // ENTRY: Buy when price is below SMA (simple mean reversion)
+    const isBelowSMA = currentPrice < currentSMA;
 
-    if (shouldBuy) {
-      const stopLoss = currentPrice * 0.985; // 1.5% stop
-      const takeProfit = currentPrice * 1.03; // 3% target
-      // Risk/Reward = 1:2
+    if (isBelowSMA && !this.inPosition) {
+      const stopLoss = currentPrice * (1 - this.stopLossPercent / 100); // 2% stop
+      const takeProfit = currentPrice * (1 + this.takeProfitPercent / 100); // 3% target
+      // Risk/Reward = 1:1.5 (but high win rate compensates)
 
-      this.lastTrade = 'buy';
+      this.inPosition = true;
       this.entryPrice = currentPrice;
 
       return {
@@ -121,14 +99,23 @@ export class GridTradingStrategy extends BaseStrategy {
         price: currentPrice,
         stopLoss,
         takeProfit,
-        reason: `Grid BUY lvl ${currentLevel}/15 (${distanceFromSMA.toFixed(2)}% from SMA) [R:R 1:2]`
+        reason: `Grid BUY: ${distanceFromSMA.toFixed(2)}% below SMA [R:R 1:1.5, SL: -${this.stopLossPercent}%, TP: +${this.takeProfitPercent}%]`
       };
+    }
+
+    // HOLD: Waiting for price to drop below SMA
+    let reason = 'Waiting for price below SMA';
+
+    if (distanceFromSMA > 1.0) {
+      reason = `Above SMA (+${distanceFromSMA.toFixed(2)}%), waiting for dip`;
+    } else if (distanceFromSMA > 0) {
+      reason = `Near SMA (+${distanceFromSMA.toFixed(2)}%), close to entry`;
     }
 
     return {
       action: 'hold',
       price: currentPrice,
-      reason: `Grid: lvl ${currentLevel}/15 (${distanceFromSMA.toFixed(2)}% from SMA)`
+      reason
     };
   }
 
@@ -136,8 +123,7 @@ export class GridTradingStrategy extends BaseStrategy {
    * Reset strategy state
    */
   public reset(): void {
-    this.lastTrade = null;
+    this.inPosition = false;
     this.entryPrice = 0;
-    this.positionCount = 0;
   }
 }
