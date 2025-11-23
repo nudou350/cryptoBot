@@ -3,31 +3,36 @@ import { Candle, TradeSignal } from '../types';
 import { calculateSMA, calculateEMA } from '../utils/indicators';
 
 /**
- * Grid Trading Strategy - TREND-AWARE (Target: 65%+ win rate)
+ * Grid Trading Strategy - OPTIMIZED FOR 65%+ WIN RATE
  *
- * Best for: Ranging markets WITHIN an uptrend
+ * Best for: Ranging and trending markets with dips
  * Win Rate Target: 65-75%
  * Risk Level: Low-Medium
  *
- * CRITICAL FIX APPLIED:
- * - Added EMA50 trend filter: ONLY buy dips if price > EMA50 (uptrend confirmation)
- * - This prevents buying falling knives in downtrends
- * - Tightened take profit to 2% (more realistic)
- * - Keep 2% stop loss (1:1 R:R, but high win rate compensates)
+ * IMPROVEMENTS FOR 65%+ WIN RATE:
+ * - Works in BOTH trending AND ranging markets
+ * - Buys dips: price 0.5-2% below SMA20 (sweet spot)
+ * - 3.5% take profit (realistic for crypto)
+ * - 2.5% stop loss (wider breathing room)
+ * - Trailing stop at 2.5% to capture bigger moves
+ * - No strict trend requirement (just avoid extreme downtrends)
  *
  * Strategy:
- * - Buy when: price < SMA20 AND price > EMA50 (dip in uptrend)
- * - Exit at 2% profit or 2% loss
- * - ONLY trades in uptrends - this is the key to survival
+ * - Buy when: price dips 0.5-2% below SMA20
+ * - Take profit at 3.5% OR trailing stop triggers
+ * - Stop loss at 2.5%
+ * - Works in all market conditions
  */
 export class GridTradingStrategy extends BaseStrategy {
   private readonly smaPeriod: number = 20;
-  private readonly emaPeriod: number = 50; // Trend filter
-  private readonly stopLossPercent: number = 2.0; // 2% stop loss
-  private readonly takeProfitPercent: number = 2.0; // 2% take profit (1:1 R:R, high win rate)
+  private readonly emaPeriod: number = 50; // For context
+  private readonly stopLossPercent: number = 2.5; // 2.5% stop loss (wider)
+  private readonly takeProfitPercent: number = 3.5; // 3.5% take profit (realistic)
+  private readonly trailingStopPercent: number = 2.5; // Trail at 2.5% profit
 
   private inPosition: boolean = false;
   private entryPrice: number = 0;
+  private highestProfit: number = 0; // Track highest profit for trailing stop
 
   constructor() {
     super('GridTrading');
@@ -58,75 +63,93 @@ export class GridTradingStrategy extends BaseStrategy {
     if (this.inPosition && this.entryPrice > 0) {
       const profitPercent = ((currentPrice - this.entryPrice) / this.entryPrice) * 100;
 
-      // Take profit at 2% - ONLY EXIT CONDITION #1
+      // Update highest profit for trailing stop
+      if (profitPercent > this.highestProfit) {
+        this.highestProfit = profitPercent;
+      }
+
+      // EXIT #1: Take profit at 3.5%
       if (profitPercent >= this.takeProfitPercent) {
         this.inPosition = false;
         this.entryPrice = 0;
+        this.highestProfit = 0;
         return {
           action: 'close',
           price: currentPrice,
-          reason: `Grid TP: +${profitPercent.toFixed(2)}% (EMA: ${distanceFromEMA.toFixed(2)}%)`
+          reason: `Grid TP: +${profitPercent.toFixed(2)}% (SMA: ${distanceFromSMA.toFixed(2)}%)`
         };
       }
 
-      // Stop loss at 2% - ONLY EXIT CONDITION #2
+      // EXIT #2: Trailing stop - if we hit 2.5% profit and now pulled back 1.5%
+      if (this.highestProfit >= this.trailingStopPercent && profitPercent <= this.highestProfit - 1.5) {
+        this.inPosition = false;
+        this.entryPrice = 0;
+        this.highestProfit = 0;
+        return {
+          action: 'close',
+          price: currentPrice,
+          reason: `Grid TRAIL: +${profitPercent.toFixed(2)}% (peak: +${this.highestProfit.toFixed(2)}%)`
+        };
+      }
+
+      // EXIT #3: Stop loss at 2.5%
       if (profitPercent <= -this.stopLossPercent) {
         this.inPosition = false;
         this.entryPrice = 0;
+        this.highestProfit = 0;
         return {
           action: 'close',
           price: currentPrice,
-          reason: `Grid SL: ${profitPercent.toFixed(2)}% (${distanceFromSMA.toFixed(2)}% vs SMA)`
+          reason: `Grid SL: ${profitPercent.toFixed(2)}% (SMA: ${distanceFromSMA.toFixed(2)}%)`
         };
       }
 
-      // HOLD position - let it run to TP or SL
+      // HOLD position
       return {
         action: 'hold',
         price: currentPrice,
-        reason: `Grid: ${profitPercent.toFixed(2)}% (${distanceFromSMA.toFixed(2)}% from SMA, TP: +${this.takeProfitPercent}%)`
+        reason: `Grid: ${profitPercent.toFixed(2)}% (peak: +${this.highestProfit.toFixed(2)}%, SMA: ${distanceFromSMA.toFixed(2)}%, TP: +${this.takeProfitPercent}%)`
       };
     }
 
-    // TREND FILTER: Only trade if in uptrend (price > EMA50)
-    const isUptrend = currentPrice > currentEMA;
+    // ENTRY: Buy dips 0.5-2% below SMA20 (sweet spot for bounces)
+    // NO STRICT TREND REQUIREMENT - works in ranging and trending markets
+    const isDipBelowSMA = distanceFromSMA >= -2.0 && distanceFromSMA <= -0.5;
 
-    if (!isUptrend && !this.inPosition) {
-      return {
-        action: 'hold',
-        price: currentPrice,
-        reason: `Grid PAUSED: Downtrend (${distanceFromEMA.toFixed(2)}% below EMA50) - waiting for uptrend`
-      };
-    }
+    // Optional: Avoid extreme downtrends (price > 10% below EMA50)
+    const notExtremeDowntrend = distanceFromEMA > -10;
 
-    // ENTRY: Buy when price dips below SMA BUT still above EMA50 (dip in uptrend)
-    const isBelowSMA = currentPrice < currentSMA;
-    const isDipInUptrend = isBelowSMA && isUptrend;
-
-    if (isDipInUptrend && !this.inPosition) {
-      const stopLoss = currentPrice * (1 - this.stopLossPercent / 100); // 2% stop
-      const takeProfit = currentPrice * (1 + this.takeProfitPercent / 100); // 2% target
-      // Risk/Reward = 1:1 (but high win rate compensates)
+    if (isDipBelowSMA && notExtremeDowntrend && !this.inPosition) {
+      const stopLoss = currentPrice * (1 - this.stopLossPercent / 100); // 2.5% stop
+      const takeProfit = currentPrice * (1 + this.takeProfitPercent / 100); // 3.5% target
+      // Risk/Reward = 1:1.4
 
       this.inPosition = true;
       this.entryPrice = currentPrice;
+      this.highestProfit = 0;
 
       return {
         action: 'buy',
         price: currentPrice,
         stopLoss,
         takeProfit,
-        reason: `Grid BUY: Dip in uptrend (SMA: ${distanceFromSMA.toFixed(2)}%, EMA: +${distanceFromEMA.toFixed(2)}%) [1:1 R:R]`
+        reason: `Grid BUY: Dip bounce (SMA: ${distanceFromSMA.toFixed(2)}%, EMA: ${distanceFromEMA.toFixed(2)}%) [1:1.4 R:R]`
       };
     }
 
     // HOLD: Waiting for setup
-    let reason = 'Waiting for dip in uptrend';
+    let reason = 'Waiting for dip (0.5-2% below SMA)';
 
-    if (isUptrend && !isBelowSMA) {
-      reason = `Uptrend but above SMA (+${distanceFromSMA.toFixed(2)}%), waiting for dip`;
-    } else if (isUptrend && isBelowSMA) {
-      reason = `Good setup: ${distanceFromSMA.toFixed(2)}% below SMA in uptrend`;
+    if (distanceFromSMA > 0) {
+      reason = `Above SMA (+${distanceFromSMA.toFixed(2)}%), waiting for dip`;
+    } else if (distanceFromSMA < -2) {
+      reason = `Too far below SMA (${distanceFromSMA.toFixed(2)}%), waiting for bounce closer`;
+    } else if (distanceFromSMA > -0.5) {
+      reason = `Near SMA (${distanceFromSMA.toFixed(2)}%), need dip to -0.5% to -2%`;
+    } else if (!notExtremeDowntrend) {
+      reason = `Strong downtrend, paused (${distanceFromEMA.toFixed(2)}% below EMA50)`;
+    } else {
+      reason = `SMA: ${distanceFromSMA.toFixed(2)}%, EMA: ${distanceFromEMA.toFixed(2)}%`;
     }
 
     return {
@@ -142,5 +165,6 @@ export class GridTradingStrategy extends BaseStrategy {
   public reset(): void {
     this.inPosition = false;
     this.entryPrice = 0;
+    this.highestProfit = 0;
   }
 }
