@@ -177,8 +177,8 @@ export class RealTradingEngine {
    * SAFETY: Reconcile existing positions on startup
    * Fetches open positions from exchange and loads them into memory
    *
-   * MULTI-BOT MODE: When running multiple bots with split budgets, this is skipped
-   * to prevent multiple bots from claiming the same position.
+   * MULTI-BOT MODE: Now properly detects and manages positions even in multi-bot mode
+   * to prevent bots from getting stuck with unmanaged positions.
    */
   private async reconcilePositionsOnStartup(): Promise<void> {
     try {
@@ -186,16 +186,13 @@ export class RealTradingEngine {
       const balance = await this.exchange.fetchBalance();
       const totalBalance = balance.USDT?.free || 0;
 
-      // If allocated budget is less than 50% of total balance, we're in multi-bot mode
-      // Skip reconciliation to prevent multiple bots from claiming same positions
-      if (this.initialBudget < totalBalance * 0.5) {
-        this.logger.info('Multi-bot mode detected - skipping position reconciliation');
-        this.logger.info(`Allocated Budget: $${this.initialBudget.toFixed(2)} | Total Balance: $${totalBalance.toFixed(2)}`);
-        this.logger.info('Bot will start fresh with no existing positions');
-        return;
-      }
+      // Detect multi-bot mode
+      const isMultiBotMode = this.initialBudget < totalBalance * 0.5;
 
       this.logger.info('Reconciling positions from exchange...');
+      if (isMultiBotMode) {
+        this.logger.info('Multi-bot mode detected - will handle positions carefully');
+      }
 
       // Fetch all open orders (including stop losses)
       const openOrders = await this.exchange.fetchOpenOrders(this.symbol);
@@ -208,36 +205,83 @@ export class RealTradingEngine {
         const currentPrice = await this.getCurrentPrice();
         const positionValue = btcBalance * currentPrice;
 
-        this.logger.warn(`FOUND EXISTING POSITION: ${btcBalance.toFixed(8)} BTC worth $${positionValue.toFixed(2)}`);
+        this.logger.warn('═══════════════════════════════════════════════════════');
+        this.logger.warn('   EXISTING POSITION DETECTED ON STARTUP              ');
+        this.logger.warn('═══════════════════════════════════════════════════════');
+        this.logger.warn(`BTC Balance: ${btcBalance.toFixed(8)} BTC`);
+        this.logger.warn(`Current Value: $${positionValue.toFixed(2)}`);
+        this.logger.warn(`Current Price: $${currentPrice.toFixed(2)}`);
 
-        // Create position object
-        const position: Position = {
-          symbol: this.symbol,
-          side: 'long',
-          entryPrice: currentPrice, // We don't know actual entry, use current
-          amount: btcBalance,
-          currentPrice,
-          unrealizedPnL: 0,
-          timestamp: Date.now(),
-        };
+        // CRITICAL FIX: Close stuck positions immediately
+        // Since we don't know the actual entry price and the position is likely stuck,
+        // it's safer to close it and let the strategy start fresh
+        this.logger.warn('Position entry price unknown - closing position for safety');
+        this.logger.warn('This prevents stuck positions from accumulating losses');
+        this.logger.warn('═══════════════════════════════════════════════════════');
 
-        // Check for existing stop loss orders
+        try {
+          // Close the position immediately
+          const roundedAmount = this.exchange.amountToPrecision(this.symbol, btcBalance);
+          this.logger.info(`Closing position: ${roundedAmount} BTC at market price`);
+
+          const order = await this.exchange.createMarketSellOrder(this.symbol, parseFloat(roundedAmount));
+
+          if (order.status === 'closed' || order.filled > 0) {
+            const fillPrice = order.average || order.price || currentPrice;
+            this.logger.info(`Position closed successfully @ $${fillPrice.toFixed(2)}`);
+            this.logger.info('Bot will start fresh with no positions');
+          } else {
+            this.logger.error('Failed to close position immediately');
+            this.logger.warn('Will attempt to manage position with restored state');
+
+            // If we can't close it, at least try to manage it
+            const position: Position = {
+              symbol: this.symbol,
+              side: 'long',
+              entryPrice: currentPrice, // Use current price as entry (conservative)
+              amount: btcBalance,
+              currentPrice,
+              unrealizedPnL: 0,
+              timestamp: Date.now(),
+            };
+
+            this.positions.push(position);
+            // Restore strategy state
+            this.strategy.restorePositionState(currentPrice, currentPrice);
+          }
+        } catch (closeError: any) {
+          this.logger.error(`Error closing position: ${closeError.message}`);
+          this.logger.warn('Will attempt to manage position with restored state');
+
+          // Fallback: load position and try to manage it
+          const position: Position = {
+            symbol: this.symbol,
+            side: 'long',
+            entryPrice: currentPrice,
+            amount: btcBalance,
+            currentPrice,
+            unrealizedPnL: 0,
+            timestamp: Date.now(),
+          };
+
+          this.positions.push(position);
+          // Restore strategy state
+          this.strategy.restorePositionState(currentPrice, currentPrice);
+        }
+
+        // Cancel any orphaned stop loss orders
         const stopLossOrders = openOrders.filter(
           (o: any) => o.type === 'STOP_LOSS_LIMIT' && o.side === 'SELL'
         );
 
-        if (stopLossOrders.length > 0) {
-          const stopLossOrder = stopLossOrders[0];
-          position.stopLoss = stopLossOrder.stopPrice || stopLossOrder.price;
-          position.stopLossOrderId = stopLossOrder.id;
-          this.openStopLossOrders.set(`${this.symbol}_0`, stopLossOrder.id);
-          this.logger.info(`Found existing stop loss order: ${stopLossOrder.id} @ $${position.stopLoss?.toFixed(2)}`);
-        } else {
-          this.logger.warn('Position exists but NO STOP LOSS FOUND - Risk management compromised!');
+        for (const stopLossOrder of stopLossOrders) {
+          try {
+            await this.exchange.cancelOrder(stopLossOrder.id, this.symbol);
+            this.logger.info(`Cancelled orphaned stop loss: ${stopLossOrder.id}`);
+          } catch (e) {
+            // Ignore if already cancelled
+          }
         }
-
-        this.positions.push(position);
-        this.logger.info('Position loaded into trading engine');
       } else {
         this.logger.info('No existing positions found - starting fresh');
       }

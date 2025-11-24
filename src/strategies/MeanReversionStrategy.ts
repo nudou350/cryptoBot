@@ -166,4 +166,15 @@ export class MeanReversionStrategy extends BaseStrategy {
     this.entryPrice = 0;
     this.highestProfit = 0;
   }
+
+  /**
+   * Restore state from existing position (called on bot restart)
+   */
+  public restorePositionState(entryPrice: number, currentPrice: number): void {
+    this.inPosition = true;
+    this.entryPrice = entryPrice;
+    const profitPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
+    this.highestProfit = Math.max(0, profitPercent);
+    console.log(`[${this.getName()}] State restored: Entry $${entryPrice.toFixed(2)}, Current $${currentPrice.toFixed(2)}, P&L ${profitPercent.toFixed(2)}%`);
+  }
 }

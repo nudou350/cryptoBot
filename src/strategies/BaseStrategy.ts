@@ -71,4 +71,14 @@ export abstract class BaseStrategy {
     const remainingMs = Math.max(0, this.MIN_TRADE_COOLDOWN - timeSinceLastTrade);
     return Math.ceil(remainingMs / 60000); // Convert to minutes
   }
+
+  /**
+   * Restore strategy state from an existing position
+   * This is called when the bot restarts and finds an existing position
+   * Subclasses should override this to restore their internal state
+   */
+  public restorePositionState(entryPrice: number, currentPrice: number): void {
+    // Base implementation does nothing
+    // Subclasses should override to restore their specific state
+  }
 }
