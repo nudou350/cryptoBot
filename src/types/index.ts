@@ -64,6 +64,14 @@ export interface BotStats {
   emergencyStopTriggered?: boolean;
   lastBalanceCheck?: number;
   balanceDiscrepancy?: number;
+  // NEW: Daily and hourly safety metrics
+  dailyLoss?: number;
+  dailyLossTriggered?: boolean;
+  dailyTradeCount?: number;
+  maxTradesPerDay?: number;
+  tradesPerDayTriggered?: boolean;
+  hourlyPnL?: number;
+  consecutiveLosses?: number;
 }
 
 export interface TradeRecord {

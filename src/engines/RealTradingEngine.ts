@@ -51,6 +51,21 @@ export class RealTradingEngine {
   private readonly REDUCE_SIZE_AFTER_LOSSES: number = 2; // Reduce position size after 2 losses
   private positionSizeMultiplier: number = 1.0; // Starts at 1.0, reduces to 0.5 after 2 losses
 
+  // DAILY LOSS LIMIT PROTECTION (NEW)
+  private dailyLossLimit: number = 0.05; // 5% max daily loss
+  private dailyStartBalance: number = 0;
+  private dailyStartTime: number = 0;
+  private dailyLossTriggered: boolean = false;
+
+  // TRADES PER DAY LIMIT (NEW)
+  private maxTradesPerDay: number = 10; // Maximum trades allowed per day
+  private dailyTradeCount: number = 0;
+  private tradesPerDayTriggered: boolean = false;
+
+  // HOURLY LOSS RATE PROTECTION (NEW)
+  private hourlyLossLimit: number = 0.02; // 2% max hourly loss
+  private hourlyPnLHistory: Array<{ timestamp: number; pnl: number }> = [];
+
   constructor(
     strategy: BaseStrategy,
     initialBudget: number,
@@ -165,8 +180,17 @@ export class RealTradingEngine {
 
       this.isRunning = true;
       this.lastBalanceCheck = Date.now();
+
+      // Initialize daily tracking
+      this.dailyStartBalance = this.currentRealBalance;
+      this.dailyStartTime = Date.now();
+      this.dailyTradeCount = 0;
+      this.dailyLossTriggered = false;
+      this.tradesPerDayTriggered = false;
+
       this.logger.info('Real trading engine started with safety features enabled');
       this.logger.info('Safety Features: Stop Loss Orders | Emergency Drawdown | Balance Verification | Slippage Monitoring');
+      this.logger.info(`Daily Limits: Max Loss ${(this.dailyLossLimit * 100).toFixed(0)}% | Max Trades ${this.maxTradesPerDay} | Hourly Loss ${(this.hourlyLossLimit * 100).toFixed(0)}%`);
     } catch (error: any) {
       this.logger.error(`Failed to start: ${error.message}`);
       throw error;
@@ -380,11 +404,25 @@ export class RealTradingEngine {
         return; // Emergency stop has been triggered
       }
 
+      // CRITICAL: Check daily loss limit
+      if (this.checkDailyLossLimit()) {
+        return; // Daily loss limit triggered - no new trades
+      }
+
+      // CRITICAL: Check hourly loss rate (rapid loss detection)
+      if (this.checkHourlyLossRate()) {
+        return; // Hourly loss limit triggered - cooling off
+      }
+
       // SAFETY: Periodic balance verification
       await this.verifyBalanceIfNeeded();
 
       switch (signal.action) {
         case 'buy':
+          // CRITICAL: Check trades per day limit before opening new position
+          if (this.checkTradesPerDayLimit()) {
+            return; // Max trades for today reached
+          }
           await this.executeBuy(signal, currentPrice);
           break;
         case 'sell':
@@ -505,6 +543,125 @@ export class RealTradingEngine {
       // Don't throw - continue operating but log the error
       return false;
     }
+  }
+
+  /**
+   * CRITICAL SAFETY: Check daily loss limit
+   * Stops trading if daily losses exceed the limit
+   */
+  private checkDailyLossLimit(): boolean {
+    // Check if we need to reset for a new day (24 hours passed)
+    const now = Date.now();
+    const hoursSinceStart = (now - this.dailyStartTime) / 3600000;
+
+    if (hoursSinceStart >= 24) {
+      // New day - reset counters
+      this.dailyStartBalance = this.currentRealBalance;
+      this.dailyStartTime = now;
+      this.dailyTradeCount = 0;
+      this.dailyLossTriggered = false;
+      this.tradesPerDayTriggered = false;
+      this.logger.info('═══════════════════════════════════════════════════════');
+      this.logger.info('   NEW TRADING DAY - DAILY LIMITS RESET               ');
+      this.logger.info('═══════════════════════════════════════════════════════');
+      this.logger.info(`Starting Balance: $${this.dailyStartBalance.toFixed(2)}`);
+      this.logger.info(`Daily Loss Limit: ${(this.dailyLossLimit * 100).toFixed(0)}% ($${(this.dailyStartBalance * this.dailyLossLimit).toFixed(2)})`);
+      this.logger.info(`Max Trades Today: ${this.maxTradesPerDay}`);
+      return false;
+    }
+
+    // Already triggered today - don't trade
+    if (this.dailyLossTriggered) {
+      this.logger.debug('Daily loss limit already triggered - waiting for new day');
+      return true;
+    }
+
+    // Calculate today's loss
+    const dailyLoss = this.dailyStartBalance - this.currentRealBalance;
+    const dailyLossPercent = this.dailyStartBalance > 0 ? dailyLoss / this.dailyStartBalance : 0;
+
+    if (dailyLossPercent >= this.dailyLossLimit) {
+      this.logger.error('═══════════════════════════════════════════════════════');
+      this.logger.error('   DAILY LOSS LIMIT TRIGGERED - TRADING PAUSED        ');
+      this.logger.error('═══════════════════════════════════════════════════════');
+      this.logger.error(`Daily Start Balance: $${this.dailyStartBalance.toFixed(2)}`);
+      this.logger.error(`Current Balance: $${this.currentRealBalance.toFixed(2)}`);
+      this.logger.error(`Daily Loss: $${dailyLoss.toFixed(2)} (${(dailyLossPercent * 100).toFixed(2)}%)`);
+      this.logger.error(`Daily Loss Limit: ${(this.dailyLossLimit * 100).toFixed(0)}%`);
+      this.logger.error('');
+      this.logger.error('Trading will resume in new trading day (24h)');
+      this.logger.error('═══════════════════════════════════════════════════════');
+
+      this.dailyLossTriggered = true;
+      return true;
+    }
+
+    // Log warning at 80% of limit
+    if (dailyLossPercent >= this.dailyLossLimit * 0.8) {
+      this.logger.warn(`⚠️ Daily loss at ${(dailyLossPercent * 100).toFixed(2)}% - approaching ${(this.dailyLossLimit * 100).toFixed(0)}% limit`);
+    }
+
+    return false;
+  }
+
+  /**
+   * CRITICAL SAFETY: Check trades per day limit
+   * Prevents overtrading which can accumulate losses quickly
+   */
+  private checkTradesPerDayLimit(): boolean {
+    // Already triggered today
+    if (this.tradesPerDayTriggered) {
+      this.logger.debug('Trades per day limit already triggered - waiting for new day');
+      return true;
+    }
+
+    if (this.dailyTradeCount >= this.maxTradesPerDay) {
+      this.logger.warn('═══════════════════════════════════════════════════════');
+      this.logger.warn('   MAX TRADES PER DAY REACHED - TRADING PAUSED        ');
+      this.logger.warn('═══════════════════════════════════════════════════════');
+      this.logger.warn(`Trades Today: ${this.dailyTradeCount}`);
+      this.logger.warn(`Max Allowed: ${this.maxTradesPerDay}`);
+      this.logger.warn('');
+      this.logger.warn('Trading will resume in new trading day (24h)');
+      this.logger.warn('═══════════════════════════════════════════════════════');
+
+      this.tradesPerDayTriggered = true;
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * CRITICAL SAFETY: Check hourly loss rate
+   * Detects rapid losses that might indicate market anomaly or strategy failure
+   */
+  private checkHourlyLossRate(): boolean {
+    const now = Date.now();
+    const oneHourAgo = now - 3600000;
+
+    // Clean up old entries (older than 1 hour)
+    this.hourlyPnLHistory = this.hourlyPnLHistory.filter(entry => entry.timestamp > oneHourAgo);
+
+    // Calculate hourly PnL
+    const hourlyPnL = this.hourlyPnLHistory.reduce((sum, entry) => sum + entry.pnl, 0);
+    const hourlyLossPercent = this.dailyStartBalance > 0 ? Math.abs(hourlyPnL) / this.dailyStartBalance : 0;
+
+    // Only check if we're losing
+    if (hourlyPnL < 0 && hourlyLossPercent >= this.hourlyLossLimit) {
+      this.logger.error('═══════════════════════════════════════════════════════');
+      this.logger.error('   RAPID HOURLY LOSS DETECTED - COOLING OFF           ');
+      this.logger.error('═══════════════════════════════════════════════════════');
+      this.logger.error(`Hourly Loss: $${Math.abs(hourlyPnL).toFixed(2)} (${(hourlyLossPercent * 100).toFixed(2)}%)`);
+      this.logger.error(`Hourly Loss Limit: ${(this.hourlyLossLimit * 100).toFixed(0)}%`);
+      this.logger.error(`Trades in Last Hour: ${this.hourlyPnLHistory.length}`);
+      this.logger.error('');
+      this.logger.error('Wait 1 hour for losses to roll off or reassess strategy');
+      this.logger.error('═══════════════════════════════════════════════════════');
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -718,6 +875,11 @@ export class RealTradingEngine {
 
       this.currentBudget -= (actualPositionValue + entryFee);
       this.expectedBalance -= (actualPositionValue + entryFee);
+
+      // INCREMENT DAILY TRADE COUNT (for trades per day limit)
+      this.dailyTradeCount++;
+      this.logger.debug(`Daily trade count: ${this.dailyTradeCount}/${this.maxTradesPerDay}`);
+
       // Record trade time for cooldown (15 min minimum between trades)
       this.strategy.recordTrade();
 
@@ -814,6 +976,12 @@ export class RealTradingEngine {
       this.currentBudget += positionValue - exitFee; // Deduct exit fee from budget
       this.expectedBalance += positionValue - exitFee;
       this.currentRealBalance += profit; // Update real balance with profit/loss
+
+      // TRACK HOURLY PnL (for rapid loss detection)
+      this.hourlyPnLHistory.push({
+        timestamp: Date.now(),
+        pnl: profit
+      });
 
       // Record comprehensive trade data
       const tradeRecord: TradeRecord = {
@@ -1017,6 +1185,18 @@ export class RealTradingEngine {
       ? Math.abs(this.currentRealBalance - this.expectedBalance)
       : 0;
 
+    // Calculate daily loss
+    const dailyLoss = this.dailyStartBalance > 0
+      ? ((this.dailyStartBalance - this.currentRealBalance) / this.dailyStartBalance) * 100
+      : 0;
+
+    // Calculate hourly PnL
+    const now = Date.now();
+    const oneHourAgo = now - 3600000;
+    const hourlyPnL = this.hourlyPnLHistory
+      .filter(entry => entry.timestamp > oneHourAgo)
+      .reduce((sum, entry) => sum + entry.pnl, 0);
+
     return {
       botName: this.strategy.getName(),
       strategy: this.strategy.getName(),
@@ -1036,6 +1216,14 @@ export class RealTradingEngine {
       emergencyStopTriggered: this.emergencyStopTriggered,
       lastBalanceCheck: this.lastBalanceCheck,
       balanceDiscrepancy,
+      // NEW: Daily and hourly safety metrics
+      dailyLoss,
+      dailyLossTriggered: this.dailyLossTriggered,
+      dailyTradeCount: this.dailyTradeCount,
+      maxTradesPerDay: this.maxTradesPerDay,
+      tradesPerDayTriggered: this.tradesPerDayTriggered,
+      hourlyPnL,
+      consecutiveLosses: this.consecutiveLosses,
     };
   }
 
