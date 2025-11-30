@@ -25,7 +25,7 @@ jobs:
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
             # Navigate to project directory
-            cd ~/cryptoBot || exit 1
+            cd /var/www/cryptoBot || exit 1
 
             # Stash any local changes before pulling
             echo "Stashing local changes..."
