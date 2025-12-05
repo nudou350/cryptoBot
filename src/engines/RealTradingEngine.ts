@@ -37,7 +37,7 @@ export class RealTradingEngine {
 
   // Safety tracking
   private emergencyStopTriggered: boolean = false;
-  private maxDrawdownLimit: number = 0.15; // 15% max drawdown
+  private maxDrawdownLimit: number = 0.12; // CONSERVATIVE: 12% max drawdown (was 15%)
   private openStopLossOrders: Map<string, string> = new Map(); // positionId -> stopLossOrderId
   private lastBalanceCheck: number = 0;
   private balanceCheckInterval: number = 10 * 60 * 1000; // 10 minutes
@@ -51,19 +51,19 @@ export class RealTradingEngine {
   private readonly REDUCE_SIZE_AFTER_LOSSES: number = 2; // Reduce position size after 2 losses
   private positionSizeMultiplier: number = 1.0; // Starts at 1.0, reduces to 0.5 after 2 losses
 
-  // DAILY LOSS LIMIT PROTECTION (NEW)
-  private dailyLossLimit: number = 0.05; // 5% max daily loss
+  // DAILY LOSS LIMIT PROTECTION - CONSERVATIVE
+  private dailyLossLimit: number = 0.025; // CONSERVATIVE: 2.5% max daily loss (was 5%)
   private dailyStartBalance: number = 0;
   private dailyStartTime: number = 0;
   private dailyLossTriggered: boolean = false;
 
-  // TRADES PER DAY LIMIT (NEW)
-  private maxTradesPerDay: number = 10; // Maximum trades allowed per day
+  // TRADES PER DAY LIMIT - CONSERVATIVE
+  private maxTradesPerDay: number = 4; // CONSERVATIVE: 4 trades per day (was 10)
   private dailyTradeCount: number = 0;
   private tradesPerDayTriggered: boolean = false;
 
-  // HOURLY LOSS RATE PROTECTION (NEW)
-  private hourlyLossLimit: number = 0.02; // 2% max hourly loss
+  // HOURLY LOSS RATE PROTECTION - CONSERVATIVE
+  private hourlyLossLimit: number = 0.01; // CONSERVATIVE: 1% max hourly loss (was 2%)
   private hourlyPnLHistory: Array<{ timestamp: number; pnl: number }> = [];
 
   constructor(
@@ -772,9 +772,9 @@ export class RealTradingEngine {
       return;
     }
 
-    // Calculate position size
-      const maxPositionValue = this.currentBudget * 0.15; // 15% max (increased from 10%)
-      const positionValue = Math.min(maxPositionValue, this.currentBudget * 0.12) * this.positionSizeMultiplier; // 12% default * multiplier (0.5 after 2 losses, 1.0 normal)
+    // Calculate position size - CONSERVATIVE
+      const maxPositionValue = this.currentBudget * 0.08; // CONSERVATIVE: 8% max (was 15%)
+      const positionValue = Math.min(maxPositionValue, this.currentBudget * 0.06) * this.positionSizeMultiplier; // CONSERVATIVE: 6% default * multiplier
       const amount = positionValue / currentPrice;
 
       // Round amount to exchange precision

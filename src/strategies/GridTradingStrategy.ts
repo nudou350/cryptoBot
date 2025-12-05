@@ -1,65 +1,93 @@
 import { BaseStrategy } from './BaseStrategy';
 import { Candle, TradeSignal } from '../types';
-import { calculateSMA, calculateEMA } from '../utils/indicators';
+import { calculateSMA, calculateEMA, calculateRSI, calculateADX, calculateBollingerWidth, getVolumeRatio } from '../utils/indicators';
 
 /**
- * Grid Trading Strategy - OPTIMIZED FOR 65%+ WIN RATE
+ * Grid Trading Strategy - CONSERVATIVE MODE (72-78% WIN RATE TARGET)
  *
- * Best for: Ranging and trending markets with dips
- * Win Rate Target: 65-75%
- * Risk Level: Low-Medium
+ * Best for: TIGHT RANGING MARKETS ONLY (ADX < 22, BB Width < 3.5%)
+ * Win Rate Target: 72-78%
+ * Risk Level: Low
  *
- * IMPROVEMENTS FOR 65%+ WIN RATE:
- * - Works in BOTH trending AND ranging markets
- * - Buys dips: price 0.5-2% below SMA20 (sweet spot)
- * - 3.5% take profit (realistic for crypto)
- * - 2.5% stop loss (wider breathing room)
- * - Trailing stop at 2.5% to capture bigger moves
- * - No strict trend requirement (just avoid extreme downtrends)
+ * CONSERVATIVE PARAMETERS:
+ * - ADX < 22 (strict ranging)
+ * - RSI between 22-40 (deeper oversold zone)
+ * - Dip 1.5-4% below SMA20 (larger grid)
+ * - BB Width < 3.5% (tight range confirmation)
+ * - Volume > 1.0x average
+ * - 1.5% stop loss (tight)
+ * - 2.5% take profit (R:R = 1:1.67)
  *
- * Strategy:
- * - Buy when: price dips 0.5-2% below SMA20
- * - Take profit at 3.5% OR trailing stop triggers
- * - Stop loss at 2.5%
- * - Works in all market conditions
+ * Strategy Rules:
+ * - ONLY trade when ADX < 22 AND BB Width < 3.5%
+ * - Entry: RSI 22-40 AND 1.5-4% below SMA20 AND Volume confirm
+ * - Exit: +2.5% TP or -1.5% SL or trailing (1.8% trigger)
  */
 export class GridTradingStrategy extends BaseStrategy {
+  // CONSERVATIVE PARAMETERS
   private readonly smaPeriod: number = 20;
-  private readonly emaPeriod: number = 50; // For context
-  private readonly stopLossPercent: number = 2.5; // 2.5% stop loss (wider)
-  private readonly takeProfitPercent: number = 3.5; // 3.5% take profit (realistic)
-  private readonly trailingStopPercent: number = 2.5; // Trail at 2.5% profit
+  private readonly emaPeriod: number = 50;
+  private readonly rsiPeriod: number = 14;
+  private readonly adxPeriod: number = 14;
+  private readonly bbPeriod: number = 20;
+
+  // CONSERVATIVE THRESHOLDS
+  private readonly adxRangingThreshold: number = 22; // Stricter than MeanReversion
+  private readonly bbWidthMaxThreshold: number = 3.5; // Tight range only
+  private readonly rsiLowerBound: number = 22; // Deeper oversold
+  private readonly rsiUpperBound: number = 40; // Still in oversold zone
+  private readonly dipMinPercent: number = 1.5; // Minimum dip below SMA (was 0.5%)
+  private readonly dipMaxPercent: number = 4.0; // Maximum dip below SMA (was 2%)
+  private readonly volumeMultiplier: number = 1.0; // 1.0x average volume
+
+  // CONSERVATIVE RISK MANAGEMENT
+  private readonly stopLossPercent: number = 1.5; // TIGHT (was 2.5%)
+  private readonly takeProfitPercent: number = 2.5; // Lower target for grid (was 3.5%)
+  private readonly trailingStopTrigger: number = 1.8; // Trail at 1.8% profit (was 2.5%)
+  private readonly trailingStopAmount: number = 0.8; // Trail back 0.8%
+
+  // CRASH AVOIDANCE
+  private readonly maxDistanceBelowEMA: number = 8; // Avoid if > 8% below EMA50
 
   private inPosition: boolean = false;
   private entryPrice: number = 0;
-  private highestProfit: number = 0; // Track highest profit for trailing stop
+  private highestProfit: number = 0;
 
   constructor() {
     super('GridTrading');
   }
 
   public analyze(candles: Candle[], currentPrice: number): TradeSignal {
-    const requiredCandles = Math.max(this.smaPeriod, this.emaPeriod) + 5;
+    const requiredCandles = Math.max(this.smaPeriod, this.emaPeriod, this.rsiPeriod, this.adxPeriod, this.bbPeriod) + 10;
 
     if (!this.hasEnoughData(candles, requiredCandles)) {
       return { action: 'hold', price: currentPrice, reason: 'Insufficient data' };
     }
 
-    // Calculate indicators
+    // Calculate all indicators
     const sma = calculateSMA(candles, this.smaPeriod);
     const ema = calculateEMA(candles, this.emaPeriod);
+    const rsi = calculateRSI(candles, this.rsiPeriod);
+    const adx = calculateADX(candles, this.adxPeriod);
+    const bbWidth = calculateBollingerWidth(candles, this.bbPeriod, 2);
+    const volumeRatio = getVolumeRatio(candles, 20);
 
+    // Get latest values
     const currentSMA = sma[sma.length - 1];
     const currentEMA = ema[ema.length - 1];
+    const currentRSI = rsi[rsi.length - 1];
+    const currentADX = adx[adx.length - 1];
+    const currentBBWidth = bbWidth[bbWidth.length - 1];
 
-    if (currentSMA === 0 || currentEMA === 0) {
+    // Validate indicators
+    if (currentSMA === 0 || currentEMA === 0 || currentRSI === 0 || currentADX === 0) {
       return { action: 'hold', price: currentPrice, reason: 'Indicators not ready' };
     }
 
     const distanceFromSMA = ((currentPrice - currentSMA) / currentSMA) * 100;
     const distanceFromEMA = ((currentPrice - currentEMA) / currentEMA) * 100;
 
-    // POSITION MANAGEMENT: If we have a position, manage it
+    // POSITION MANAGEMENT
     if (this.inPosition && this.entryPrice > 0) {
       const profitPercent = ((currentPrice - this.entryPrice) / this.entryPrice) * 100;
 
@@ -68,11 +96,9 @@ export class GridTradingStrategy extends BaseStrategy {
         this.highestProfit = profitPercent;
       }
 
-      // EXIT #1: Take profit at 3.5%
+      // EXIT #1: Take profit
       if (profitPercent >= this.takeProfitPercent) {
-        this.inPosition = false;
-        this.entryPrice = 0;
-        this.highestProfit = 0;
+        this.resetPosition();
         return {
           action: 'close',
           price: currentPrice,
@@ -80,23 +106,20 @@ export class GridTradingStrategy extends BaseStrategy {
         };
       }
 
-      // EXIT #2: Trailing stop - if we hit 2.5% profit and now pulled back 1.5%
-      if (this.highestProfit >= this.trailingStopPercent && profitPercent <= this.highestProfit - 1.5) {
-        this.inPosition = false;
-        this.entryPrice = 0;
-        this.highestProfit = 0;
+      // EXIT #2: Trailing stop
+      if (this.highestProfit >= this.trailingStopTrigger && profitPercent <= this.highestProfit - this.trailingStopAmount) {
+        const peakProfit = this.highestProfit;
+        this.resetPosition();
         return {
           action: 'close',
           price: currentPrice,
-          reason: `Grid TRAIL: +${profitPercent.toFixed(2)}% (peak: +${this.highestProfit.toFixed(2)}%)`
+          reason: `Grid TRAIL: +${profitPercent.toFixed(2)}% (peak: +${peakProfit.toFixed(2)}%)`
         };
       }
 
-      // EXIT #3: Stop loss at 2.5%
+      // EXIT #3: Stop loss
       if (profitPercent <= -this.stopLossPercent) {
-        this.inPosition = false;
-        this.entryPrice = 0;
-        this.highestProfit = 0;
+        this.resetPosition();
         return {
           action: 'close',
           price: currentPrice,
@@ -112,17 +135,34 @@ export class GridTradingStrategy extends BaseStrategy {
       };
     }
 
-    // ENTRY: Buy dips 0.5-2% below SMA20 (sweet spot for bounces)
-    // NO STRICT TREND REQUIREMENT - works in ranging and trending markets
-    const isDipBelowSMA = distanceFromSMA >= -2.0 && distanceFromSMA <= -0.5;
+    // ═══════════════════════════════════════════════════════════
+    // CONSERVATIVE ENTRY CONDITIONS (ALL MUST BE TRUE)
+    // ═══════════════════════════════════════════════════════════
 
-    // Optional: Avoid extreme downtrends (price > 10% below EMA50)
-    const notExtremeDowntrend = distanceFromEMA > -10;
+    // 1. MARKET REGIME: Must be STRICT RANGING (ADX < 22)
+    const isStrictRanging = currentADX < this.adxRangingThreshold;
 
-    if (isDipBelowSMA && notExtremeDowntrend && !this.inPosition) {
-      const stopLoss = currentPrice * (1 - this.stopLossPercent / 100); // 2.5% stop
-      const takeProfit = currentPrice * (1 + this.takeProfitPercent / 100); // 3.5% target
-      // Risk/Reward = 1:1.4
+    // 2. VOLATILITY: BB Width < 3.5% (tight range)
+    const isTightRange = currentBBWidth < this.bbWidthMaxThreshold;
+
+    // 3. RSI: In oversold zone (22-40)
+    const isInOversoldZone = currentRSI >= this.rsiLowerBound && currentRSI <= this.rsiUpperBound;
+
+    // 4. GRID LEVEL: Price 1.5-4% below SMA20
+    const isDipInGrid = distanceFromSMA <= -this.dipMinPercent && distanceFromSMA >= -this.dipMaxPercent;
+
+    // 5. VOLUME: Above 1.0x average
+    const hasVolumeConfirmation = volumeRatio >= this.volumeMultiplier;
+
+    // 6. CRASH AVOIDANCE: Not too far below EMA50
+    const notCrashing = distanceFromEMA > -this.maxDistanceBelowEMA;
+
+    // ALL CONDITIONS MUST BE TRUE
+    const hasEntrySignal = isStrictRanging && isTightRange && isInOversoldZone && isDipInGrid && hasVolumeConfirmation && notCrashing;
+
+    if (hasEntrySignal && !this.inPosition) {
+      const stopLoss = currentPrice * (1 - this.stopLossPercent / 100);
+      const takeProfit = currentPrice * (1 + this.takeProfitPercent / 100);
 
       this.inPosition = true;
       this.entryPrice = currentPrice;
@@ -133,23 +173,33 @@ export class GridTradingStrategy extends BaseStrategy {
         price: currentPrice,
         stopLoss,
         takeProfit,
-        reason: `Grid BUY: Dip bounce (SMA: ${distanceFromSMA.toFixed(2)}%, EMA: ${distanceFromEMA.toFixed(2)}%) [1:1.4 R:R]`
+        reason: `Grid BUY: SMA ${distanceFromSMA.toFixed(2)}% | RSI ${currentRSI.toFixed(1)} | ADX ${currentADX.toFixed(1)} | BBW ${currentBBWidth.toFixed(2)}% [1:1.67 R:R]`
       };
     }
 
-    // HOLD: Waiting for setup
-    let reason = 'Waiting for dip (0.5-2% below SMA)';
+    // HOLD: Build detailed reason for waiting
+    let reason = 'Waiting for grid level';
 
-    if (distanceFromSMA > 0) {
-      reason = `Above SMA (+${distanceFromSMA.toFixed(2)}%), waiting for dip`;
-    } else if (distanceFromSMA < -2) {
-      reason = `Too far below SMA (${distanceFromSMA.toFixed(2)}%), waiting for bounce closer`;
-    } else if (distanceFromSMA > -0.5) {
-      reason = `Near SMA (${distanceFromSMA.toFixed(2)}%), need dip to -0.5% to -2%`;
-    } else if (!notExtremeDowntrend) {
-      reason = `Strong downtrend, paused (${distanceFromEMA.toFixed(2)}% below EMA50)`;
-    } else {
-      reason = `SMA: ${distanceFromSMA.toFixed(2)}%, EMA: ${distanceFromEMA.toFixed(2)}%`;
+    if (!isStrictRanging) {
+      reason = `Market not ranging (ADX: ${currentADX.toFixed(1)} > ${this.adxRangingThreshold}). Grid disabled.`;
+    } else if (!isTightRange) {
+      reason = `Range too wide (BB Width: ${currentBBWidth.toFixed(2)}% > ${this.bbWidthMaxThreshold}%)`;
+    } else if (!isInOversoldZone) {
+      if (currentRSI < this.rsiLowerBound) {
+        reason = `RSI too low (${currentRSI.toFixed(1)} < ${this.rsiLowerBound}). Wait for bounce.`;
+      } else {
+        reason = `RSI not oversold (${currentRSI.toFixed(1)}, need ${this.rsiLowerBound}-${this.rsiUpperBound})`;
+      }
+    } else if (!isDipInGrid) {
+      if (distanceFromSMA > -this.dipMinPercent) {
+        reason = `Above grid zone (SMA: ${distanceFromSMA.toFixed(2)}%, need ${-this.dipMinPercent}% to ${-this.dipMaxPercent}%)`;
+      } else {
+        reason = `Below grid zone (SMA: ${distanceFromSMA.toFixed(2)}%, max ${-this.dipMaxPercent}%)`;
+      }
+    } else if (!hasVolumeConfirmation) {
+      reason = `Low volume (${volumeRatio.toFixed(2)}x, need >= ${this.volumeMultiplier}x)`;
+    } else if (!notCrashing) {
+      reason = `Crash avoidance active (${distanceFromEMA.toFixed(2)}% below EMA50)`;
     }
 
     return {
@@ -159,18 +209,16 @@ export class GridTradingStrategy extends BaseStrategy {
     };
   }
 
-  /**
-   * Reset strategy state
-   */
-  public reset(): void {
+  private resetPosition(): void {
     this.inPosition = false;
     this.entryPrice = 0;
     this.highestProfit = 0;
   }
 
-  /**
-   * Restore state from existing position (called on bot restart)
-   */
+  public reset(): void {
+    this.resetPosition();
+  }
+
   public restorePositionState(entryPrice: number, currentPrice: number): void {
     this.inPosition = true;
     this.entryPrice = entryPrice;

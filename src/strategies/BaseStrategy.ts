@@ -3,7 +3,8 @@ import { Candle, TradeSignal } from '../types';
 export abstract class BaseStrategy {
   protected name: string;
   protected lastTradeTime: number = 0;
-  protected readonly MIN_TRADE_COOLDOWN: number = 15 * 60 * 1000; // 15 minutes in milliseconds
+  // CONSERVATIVE: 30 minute cooldown (was 15 minutes)
+  protected readonly MIN_TRADE_COOLDOWN: number = 30 * 60 * 1000; // 30 minutes in milliseconds
 
   constructor(name: string) {
     this.name = name;
@@ -20,12 +21,13 @@ export abstract class BaseStrategy {
 
   /**
    * Calculate position size based on risk management
+   * CONSERVATIVE MODE: Lower risk, smaller positions
    */
   protected calculatePositionSize(
     capital: number,
     entryPrice: number,
     stopLoss: number,
-    riskPercentage: number = 0.025 // 2.5% risk per trade (increased from 2%)
+    riskPercentage: number = 0.015 // CONSERVATIVE: 1.5% risk per trade (was 2.5%)
   ): number {
     const riskAmount = capital * riskPercentage;
     const priceRisk = Math.abs(entryPrice - stopLoss);
@@ -33,7 +35,7 @@ export abstract class BaseStrategy {
     if (priceRisk === 0) return 0;
 
     const positionSize = riskAmount / priceRisk;
-    const maxPositionValue = capital * 0.15; // Max 15% of capital per position (increased from 10%)
+    const maxPositionValue = capital * 0.08; // CONSERVATIVE: Max 8% of capital per position (was 15%)
     const maxPositionSize = maxPositionValue / entryPrice;
 
     return Math.min(positionSize, maxPositionSize);

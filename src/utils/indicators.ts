@@ -357,3 +357,58 @@ export function calculateAverageVolume(candles: Candle[], period: number): numbe
 
   return avgVolume;
 }
+
+/**
+ * Calculate Bollinger Band Width as percentage
+ * Used to identify low volatility ranging conditions
+ *
+ * @param candles - Candle data
+ * @param period - Period for BB calculation (default 20)
+ * @param stdDev - Standard deviation multiplier (default 2)
+ * @returns Array of BB widths as percentages
+ */
+export function calculateBollingerWidth(candles: Candle[], period: number = 20, stdDev: number = 2): number[] {
+  const bb = calculateBollingerBands(candles, period, stdDev);
+  const widths: number[] = [];
+
+  for (let i = 0; i < candles.length; i++) {
+    if (bb.middle[i] === 0) {
+      widths.push(0);
+    } else {
+      const width = ((bb.upper[i] - bb.lower[i]) / bb.middle[i]) * 100;
+      widths.push(width);
+    }
+  }
+
+  return widths;
+}
+
+/**
+ * Check if current candle is bullish (close > open)
+ * Used for entry confirmation in trend strategies
+ */
+export function isBullishCandle(candle: Candle): boolean {
+  return candle.close > candle.open;
+}
+
+/**
+ * Check if current candle is bearish (close < open)
+ */
+export function isBearishCandle(candle: Candle): boolean {
+  return candle.close < candle.open;
+}
+
+/**
+ * Get current volume ratio compared to average
+ * @returns ratio (e.g., 1.5 means 50% above average)
+ */
+export function getVolumeRatio(candles: Candle[], period: number = 20): number {
+  if (candles.length < period + 1) return 0;
+
+  const avgVolumes = calculateAverageVolume(candles.slice(0, -1), period);
+  const avgVolume = avgVolumes[avgVolumes.length - 1];
+  const currentVolume = candles[candles.length - 1].volume;
+
+  if (avgVolume === 0) return 0;
+  return currentVolume / avgVolume;
+}

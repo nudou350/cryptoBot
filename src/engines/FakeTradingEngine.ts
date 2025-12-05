@@ -88,7 +88,7 @@ export class FakeTradingEngine {
   }
 
   /**
-   * Execute a buy order (open position)
+   * Execute a buy order (open position) - CONSERVATIVE MODE
    */
   private async executeBuy(signal: TradeSignal, currentPrice: number): Promise<void> {
     // Don't open new position if we already have one
@@ -97,11 +97,10 @@ export class FakeTradingEngine {
       return;
     }
 
-    // Calculate position size (max 40% of budget for meaningful profits)
-    // With $500 budget: 30% = $150 per trade
-    // This allows $7.50 profit on 5% win (vs $2 with 8%)
-    const maxPositionValue = this.currentBudget * 0.40;
-    const positionValue = Math.min(maxPositionValue, this.currentBudget * 0.30); // Use 30% typically
+    // Calculate position size - CONSERVATIVE
+    // With $500 budget: 6% = $30 per trade (smaller positions, lower risk)
+    const maxPositionValue = this.currentBudget * 0.08; // CONSERVATIVE: 8% max (was 40%)
+    const positionValue = Math.min(maxPositionValue, this.currentBudget * 0.06); // CONSERVATIVE: 6% default (was 30%)
     const amount = positionValue / currentPrice;
 
     // Check if we have enough budget

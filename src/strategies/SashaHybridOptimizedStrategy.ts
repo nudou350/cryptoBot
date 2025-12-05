@@ -1,69 +1,94 @@
 import { BaseStrategy } from './BaseStrategy';
 import { Candle, TradeSignal } from '../types';
-import { calculateEMA, calculateRSI } from '../utils/indicators';
+import { calculateEMA, calculateRSI, calculateADX, getVolumeRatio, isBullishCandle } from '../utils/indicators';
 
 /**
- * Pullback Strategy - OPTIMIZED FOR 65%+ WIN RATE
+ * Pullback/Hybrid Strategy - CONSERVATIVE MODE (68-72% WIN RATE TARGET)
  *
- * Simplified pullback strategy that works in all market conditions
- * Win Rate Target: 65-75%
+ * Best for: TRENDING MARKETS ONLY (ADX > 25)
+ * Win Rate Target: 68-72%
  * Risk Level: Medium
  *
- * IMPROVEMENTS FOR 65%+ WIN RATE:
- * - Works in BOTH trending AND ranging markets
- * - Simplified entry: RSI < 45 OR price near EMA20
- * - 4% take profit (realistic for crypto)
- * - 2.5% stop loss (wider breathing room)
- * - Trailing stop at 3% to capture bigger moves
- * - No strict trend requirement
+ * CONSERVATIVE PARAMETERS:
+ * - ADX > 25 (confirmed trend - OPPOSITE of MeanReversion)
+ * - EMA alignment: EMA9 > EMA21 > EMA50 (bullish stack)
+ * - RSI < 32 AND RSI > 20 (pullback but not crash)
+ * - Price within 1.5-3% of EMA21 (pullback zone)
+ * - Current candle is bullish (entry confirmation)
+ * - Volume > 1.0x average
+ * - 1.5% stop loss (tight)
+ * - 4.5% take profit (R:R = 1:3)
  *
- * Strategy:
- * - Buy when: RSI < 45 OR price pulls back to EMA20
- * - Take profit at 4% OR trailing stop triggers
- * - Stop loss at 2.5%
- * - Works in all market conditions
+ * Strategy Rules:
+ * - ONLY trade when ADX > 25 AND EMA stack aligned
+ * - Entry: Pullback to EMA21 + RSI < 32 + Bullish candle
+ * - Exit: +4.5% TP or -1.5% SL or trailing (2.5% trigger, 1% trail)
  */
 export class SashaHybridOptimizedStrategy extends BaseStrategy {
+  // CONSERVATIVE PARAMETERS
   private readonly rsiPeriod: number = 14;
-  private readonly emaShortPeriod: number = 20; // Pullback level
-  private readonly emaLongPeriod: number = 50; // For context
-  private readonly oversoldThreshold: number = 45; // More opportunities
-  private readonly stopLossPercent: number = 2.5; // 2.5% stop loss (wider)
-  private readonly takeProfitPercent: number = 4.0; // 4% take profit (realistic)
-  private readonly trailingStopPercent: number = 3.0; // Trail at 3% profit
+  private readonly ema9Period: number = 9;   // Fast EMA for stack
+  private readonly ema21Period: number = 21; // Medium EMA (pullback level)
+  private readonly ema50Period: number = 50; // Slow EMA for context
+  private readonly adxPeriod: number = 14;
+
+  // CONSERVATIVE THRESHOLDS
+  private readonly adxTrendingThreshold: number = 25; // Must be TRENDING
+  private readonly rsiOversoldThreshold: number = 32; // Pullback threshold (was 45)
+  private readonly rsiCrashThreshold: number = 20; // Too low = crash
+  private readonly pullbackMinPercent: number = 1.5; // Min distance from EMA21
+  private readonly pullbackMaxPercent: number = 3.0; // Max distance from EMA21
+  private readonly volumeMultiplier: number = 1.0; // 1.0x average volume
+
+  // CONSERVATIVE RISK MANAGEMENT
+  private readonly stopLossPercent: number = 1.5; // TIGHT (was 2.5%)
+  private readonly takeProfitPercent: number = 4.5; // Higher for trends (R:R = 1:3)
+  private readonly trailingStopTrigger: number = 2.5; // Trail at 2.5% profit
+  private readonly trailingStopAmount: number = 1.0; // Trail back 1%
+
+  // CRASH AVOIDANCE
+  private readonly maxDistanceBelowEMA50: number = 8; // Avoid if > 8% below EMA50
 
   private inPosition: boolean = false;
   private entryPrice: number = 0;
-  private highestProfit: number = 0; // Track highest profit for trailing stop
+  private highestProfit: number = 0;
 
   constructor() {
     super('Sasha-Hybrid-Optimized');
   }
 
   public analyze(candles: Candle[], currentPrice: number): TradeSignal {
-    const requiredCandles = Math.max(this.rsiPeriod, this.emaShortPeriod, this.emaLongPeriod) + 5;
+    const requiredCandles = Math.max(this.rsiPeriod, this.ema9Period, this.ema21Period, this.ema50Period, this.adxPeriod) + 10;
 
     if (!this.hasEnoughData(candles, requiredCandles)) {
       return { action: 'hold', price: currentPrice, reason: 'Insufficient data' };
     }
 
-    // Calculate indicators
+    // Calculate all indicators
     const rsi = calculateRSI(candles, this.rsiPeriod);
-    const emaShort = calculateEMA(candles, this.emaShortPeriod);
-    const emaLong = calculateEMA(candles, this.emaLongPeriod);
+    const ema9 = calculateEMA(candles, this.ema9Period);
+    const ema21 = calculateEMA(candles, this.ema21Period);
+    const ema50 = calculateEMA(candles, this.ema50Period);
+    const adx = calculateADX(candles, this.adxPeriod);
+    const volumeRatio = getVolumeRatio(candles, 20);
 
+    // Get latest values
     const currentRSI = rsi[rsi.length - 1];
-    const currentEMAShort = emaShort[emaShort.length - 1];
-    const currentEMALong = emaLong[emaLong.length - 1];
+    const currentEMA9 = ema9[ema9.length - 1];
+    const currentEMA21 = ema21[ema21.length - 1];
+    const currentEMA50 = ema50[ema50.length - 1];
+    const currentADX = adx[adx.length - 1];
+    const currentCandle = candles[candles.length - 1];
 
-    if (currentRSI === 0 || currentEMAShort === 0 || currentEMALong === 0) {
+    // Validate indicators
+    if (currentRSI === 0 || currentEMA9 === 0 || currentEMA21 === 0 || currentEMA50 === 0 || currentADX === 0) {
       return { action: 'hold', price: currentPrice, reason: 'Indicators not ready' };
     }
 
-    const distanceFromEMAShort = ((currentPrice - currentEMAShort) / currentEMAShort) * 100;
-    const distanceFromEMALong = ((currentPrice - currentEMALong) / currentEMALong) * 100;
+    const distanceFromEMA21 = ((currentPrice - currentEMA21) / currentEMA21) * 100;
+    const distanceFromEMA50 = ((currentPrice - currentEMA50) / currentEMA50) * 100;
 
-    // POSITION MANAGEMENT: If we have a position, manage it
+    // POSITION MANAGEMENT
     if (this.inPosition && this.entryPrice > 0) {
       const profitPercent = ((currentPrice - this.entryPrice) / this.entryPrice) * 100;
 
@@ -72,39 +97,34 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
         this.highestProfit = profitPercent;
       }
 
-      // EXIT #1: Take profit at 4%
+      // EXIT #1: Take profit
       if (profitPercent >= this.takeProfitPercent) {
-        this.inPosition = false;
-        this.entryPrice = 0;
-        this.highestProfit = 0;
+        this.resetPosition();
         return {
           action: 'close',
           price: currentPrice,
-          reason: `Pullback TP: +${profitPercent.toFixed(2)}% (RSI: ${currentRSI.toFixed(1)})`
+          reason: `Hybrid TP: +${profitPercent.toFixed(2)}% (RSI: ${currentRSI.toFixed(1)}, ADX: ${currentADX.toFixed(1)})`
         };
       }
 
-      // EXIT #2: Trailing stop - if we hit 3% profit and now pulled back 1.5%
-      if (this.highestProfit >= this.trailingStopPercent && profitPercent <= this.highestProfit - 1.5) {
-        this.inPosition = false;
-        this.entryPrice = 0;
-        this.highestProfit = 0;
+      // EXIT #2: Trailing stop
+      if (this.highestProfit >= this.trailingStopTrigger && profitPercent <= this.highestProfit - this.trailingStopAmount) {
+        const peakProfit = this.highestProfit;
+        this.resetPosition();
         return {
           action: 'close',
           price: currentPrice,
-          reason: `Pullback TRAIL: +${profitPercent.toFixed(2)}% (peak: +${this.highestProfit.toFixed(2)}%, RSI: ${currentRSI.toFixed(1)})`
+          reason: `Hybrid TRAIL: +${profitPercent.toFixed(2)}% (peak: +${peakProfit.toFixed(2)}%)`
         };
       }
 
-      // EXIT #3: Stop loss at 2.5%
+      // EXIT #3: Stop loss
       if (profitPercent <= -this.stopLossPercent) {
-        this.inPosition = false;
-        this.entryPrice = 0;
-        this.highestProfit = 0;
+        this.resetPosition();
         return {
           action: 'close',
           price: currentPrice,
-          reason: `Pullback SL: ${profitPercent.toFixed(2)}% (RSI: ${currentRSI.toFixed(1)})`
+          reason: `Hybrid SL: ${profitPercent.toFixed(2)}% (RSI: ${currentRSI.toFixed(1)})`
         };
       }
 
@@ -112,51 +132,83 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
       return {
         action: 'hold',
         price: currentPrice,
-        reason: `Pullback: ${profitPercent.toFixed(2)}% (peak: +${this.highestProfit.toFixed(2)}%, RSI: ${currentRSI.toFixed(1)}, TP: +${this.takeProfitPercent}%)`
+        reason: `Hybrid: ${profitPercent.toFixed(2)}% (peak: +${this.highestProfit.toFixed(2)}%, RSI: ${currentRSI.toFixed(1)}, TP: +${this.takeProfitPercent}%)`
       };
     }
 
-    // ENTRY: Simplified conditions - RSI oversold OR price pullback to EMA20
-    // NO STRICT TREND REQUIREMENT - works in ranging and trending markets
-    const isOversold = currentRSI < this.oversoldThreshold;
-    const isPullbackToEMA = Math.abs(distanceFromEMAShort) <= 1.0; // Within 1% of EMA20
+    // ═══════════════════════════════════════════════════════════
+    // CONSERVATIVE ENTRY CONDITIONS (ALL MUST BE TRUE)
+    // ═══════════════════════════════════════════════════════════
 
-    // Optional: Avoid extreme downtrends (price > 10% below EMA50)
-    const notExtremeDowntrend = distanceFromEMALong > -10;
+    // 1. MARKET REGIME: Must be TRENDING (ADX > 25)
+    const isTrendingMarket = currentADX > this.adxTrendingThreshold;
 
-    // Enter on oversold OR pullback to EMA20 (more flexible)
-    const hasEntrySignal = (isOversold || isPullbackToEMA) && notExtremeDowntrend;
+    // 2. EMA ALIGNMENT: Bullish stack (EMA9 > EMA21 > EMA50)
+    const isEmaAligned = currentEMA9 > currentEMA21 && currentEMA21 > currentEMA50;
+
+    // 3. RSI: Pullback zone (20 < RSI < 32)
+    const isInPullbackZone = currentRSI < this.rsiOversoldThreshold && currentRSI > this.rsiCrashThreshold;
+
+    // 4. PULLBACK LEVEL: Price within 1.5-3% of EMA21
+    // For pullbacks in uptrend, we look for price that has pulled back BELOW EMA21 or near it
+    const absDistanceFromEMA21 = Math.abs(distanceFromEMA21);
+    const isInPullbackRange = absDistanceFromEMA21 <= this.pullbackMaxPercent && absDistanceFromEMA21 >= this.pullbackMinPercent / 2;
+
+    // 5. CANDLE CONFIRMATION: Current candle is bullish
+    const isBullish = isBullishCandle(currentCandle);
+
+    // 6. VOLUME: Above 1.0x average
+    const hasVolumeConfirmation = volumeRatio >= this.volumeMultiplier;
+
+    // 7. CRASH AVOIDANCE: Not too far below EMA50
+    const notCrashing = distanceFromEMA50 > -this.maxDistanceBelowEMA50;
+
+    // 8. PRICE ABOVE EMA50: Basic trend confirmation
+    const priceAboveEMA50 = currentPrice > currentEMA50;
+
+    // ALL CONDITIONS MUST BE TRUE
+    const hasEntrySignal = isTrendingMarket && isEmaAligned && isInPullbackZone && isInPullbackRange && isBullish && hasVolumeConfirmation && notCrashing && priceAboveEMA50;
 
     if (hasEntrySignal && !this.inPosition) {
-      const stopLoss = currentPrice * (1 - this.stopLossPercent / 100); // 2.5% stop
-      const takeProfit = currentPrice * (1 + this.takeProfitPercent / 100); // 4% target
-      // Risk/Reward = 1:1.6
+      const stopLoss = currentPrice * (1 - this.stopLossPercent / 100);
+      const takeProfit = currentPrice * (1 + this.takeProfitPercent / 100);
 
       this.inPosition = true;
       this.entryPrice = currentPrice;
       this.highestProfit = 0;
 
-      const trigger = isOversold ? `RSI ${currentRSI.toFixed(1)}` : `EMA20 pullback`;
       return {
         action: 'buy',
         price: currentPrice,
         stopLoss,
         takeProfit,
-        reason: `Pullback BUY: ${trigger} (EMA50: ${distanceFromEMALong.toFixed(2)}%) [1:1.6 R:R]`
+        reason: `Hybrid BUY: RSI ${currentRSI.toFixed(1)} | ADX ${currentADX.toFixed(1)} | EMA21 ${distanceFromEMA21.toFixed(2)}% | ${isBullish ? 'Bullish' : 'Bearish'} [1:3 R:R]`
       };
     }
 
-    // HOLD: Waiting for setup
-    let reason = 'Waiting for oversold or pullback';
+    // HOLD: Build detailed reason for waiting
+    let reason = 'Waiting for pullback';
 
-    if (currentRSI < 50 && Math.abs(distanceFromEMAShort) < 3) {
-      reason = `Good setup approaching (RSI: ${currentRSI.toFixed(1)}, EMA20: ${distanceFromEMAShort.toFixed(2)}%)`;
-    } else if (currentRSI > 60) {
-      reason = `Overbought, wait for pullback (RSI: ${currentRSI.toFixed(1)})`;
-    } else if (!notExtremeDowntrend) {
-      reason = `Strong downtrend, paused (${distanceFromEMALong.toFixed(2)}% below EMA50)`;
-    } else {
-      reason = `Neutral (RSI: ${currentRSI.toFixed(1)}, EMA20: ${distanceFromEMAShort.toFixed(2)}%, EMA50: ${distanceFromEMALong.toFixed(2)}%)`;
+    if (!isTrendingMarket) {
+      reason = `Not trending (ADX: ${currentADX.toFixed(1)} < ${this.adxTrendingThreshold}). Hybrid disabled.`;
+    } else if (!isEmaAligned) {
+      reason = `EMA not aligned. Need EMA9 > EMA21 > EMA50. Current: ${currentEMA9.toFixed(0)} / ${currentEMA21.toFixed(0)} / ${currentEMA50.toFixed(0)}`;
+    } else if (!priceAboveEMA50) {
+      reason = `Price below EMA50 (${distanceFromEMA50.toFixed(2)}%). Wait for trend recovery.`;
+    } else if (!isInPullbackZone) {
+      if (currentRSI >= this.rsiOversoldThreshold) {
+        reason = `RSI not pulled back (${currentRSI.toFixed(1)}, need < ${this.rsiOversoldThreshold})`;
+      } else {
+        reason = `RSI too low (${currentRSI.toFixed(1)} < ${this.rsiCrashThreshold}). Crash risk.`;
+      }
+    } else if (!isInPullbackRange) {
+      reason = `Price not at EMA21 pullback zone (${distanceFromEMA21.toFixed(2)}%, need ${-this.pullbackMaxPercent}% to +${this.pullbackMaxPercent}%)`;
+    } else if (!isBullish) {
+      reason = `Waiting for bullish candle confirmation`;
+    } else if (!hasVolumeConfirmation) {
+      reason = `Low volume (${volumeRatio.toFixed(2)}x, need >= ${this.volumeMultiplier}x)`;
+    } else if (!notCrashing) {
+      reason = `Crash avoidance active (${distanceFromEMA50.toFixed(2)}% below EMA50)`;
     }
 
     return {
@@ -166,18 +218,16 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
     };
   }
 
-  /**
-   * Reset strategy state
-   */
-  public reset(): void {
+  private resetPosition(): void {
     this.inPosition = false;
     this.entryPrice = 0;
     this.highestProfit = 0;
   }
 
-  /**
-   * Restore state from existing position (called on bot restart)
-   */
+  public reset(): void {
+    this.resetPosition();
+  }
+
   public restorePositionState(entryPrice: number, currentPrice: number): void {
     this.inPosition = true;
     this.entryPrice = entryPrice;

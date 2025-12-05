@@ -1,66 +1,89 @@
 import { BaseStrategy } from './BaseStrategy';
 import { Candle, TradeSignal } from '../types';
-import { calculateRSI, calculateEMA } from '../utils/indicators';
+import { calculateRSI, calculateEMA, calculateADX, calculateBollingerBands, calculateBollingerWidth, getVolumeRatio } from '../utils/indicators';
 
 /**
- * Mean Reversion Strategy - OPTIMIZED FOR 65%+ WIN RATE
+ * Mean Reversion Strategy - CONSERVATIVE MODE (70%+ WIN RATE TARGET)
  *
- * Best for: Ranging and trending markets with oversold bounces
- * Win Rate Target: 65-75%
- * Risk Level: Medium
+ * Best for: RANGING MARKETS ONLY (ADX < 25)
+ * Win Rate Target: 70-75%
+ * Risk Level: Low-Medium
  *
- * IMPROVEMENTS FOR 65%+ WIN RATE:
- * - Works in BOTH trending AND ranging markets (not just uptrend)
- * - RSI < 40 (more opportunities than < 35)
- * - 4% take profit (realistic for crypto volatility)
- * - 2.5% stop loss (wider breathing room)
- * - Trailing stop at 3% to capture bigger moves
- * - Simplified entry: just RSI oversold, no strict trend requirement
+ * CONSERVATIVE PARAMETERS:
+ * - RSI < 28 (strict oversold - not 40)
+ * - ADX < 25 (ranging market filter - CRITICAL)
+ * - Price at or below Bollinger Lower Band
+ * - Volume > 1.2x average (strong confirmation)
+ * - BB Width < 4% (low volatility)
+ * - 1.5% stop loss (tight)
+ * - 3.5% take profit (R:R = 1:2.3)
  *
- * Strategy:
- * - Buy when: RSI < 40 (oversold bounce opportunity)
- * - Take profit at 4% OR trailing stop triggers
- * - Stop loss at 2.5%
- * - Works in all market conditions
+ * Strategy Rules:
+ * - ONLY trade when market is RANGING (ADX < 25)
+ * - Entry: RSI < 28 + Below BB Lower + Volume confirm
+ * - Exit: +3.5% TP or -1.5% SL or trailing (2% trigger, 1% trail)
  */
 export class MeanReversionStrategy extends BaseStrategy {
+  // CONSERVATIVE PARAMETERS
   private readonly rsiPeriod: number = 14;
   private readonly emaPeriod: number = 50; // For context only
-  private readonly oversoldThreshold: number = 40; // More opportunities
-  private readonly stopLossPercent: number = 2.5; // 2.5% stop loss (wider)
-  private readonly takeProfitPercent: number = 4.0; // 4% take profit (realistic)
-  private readonly trailingStopPercent: number = 3.0; // Trail at 3% profit
+  private readonly adxPeriod: number = 14;
+  private readonly bbPeriod: number = 20;
+  private readonly bbStdDev: number = 2;
+
+  // CONSERVATIVE THRESHOLDS
+  private readonly oversoldThreshold: number = 28; // STRICT (was 40)
+  private readonly adxRangingThreshold: number = 25; // Market must be ranging
+  private readonly bbWidthMaxThreshold: number = 4; // Low volatility only
+  private readonly volumeMultiplier: number = 1.2; // 1.2x average volume
+
+  // CONSERVATIVE RISK MANAGEMENT
+  private readonly stopLossPercent: number = 1.5; // TIGHT (was 2.5%)
+  private readonly takeProfitPercent: number = 3.5; // R:R = 1:2.3
+  private readonly trailingStopTrigger: number = 2.0; // Trail at 2% profit
+  private readonly trailingStopAmount: number = 1.0; // Trail back 1%
+
+  // CRASH AVOIDANCE
+  private readonly maxDistanceBelowEMA: number = 8; // Avoid if > 8% below EMA50
 
   private entryPrice: number = 0;
   private inPosition: boolean = false;
-  private highestProfit: number = 0; // Track highest profit for trailing stop
+  private highestProfit: number = 0;
 
   constructor() {
     super('MeanReversion');
   }
 
   public analyze(candles: Candle[], currentPrice: number): TradeSignal {
-    const requiredCandles = Math.max(this.rsiPeriod, this.emaPeriod) + 5;
+    const requiredCandles = Math.max(this.rsiPeriod, this.emaPeriod, this.adxPeriod, this.bbPeriod) + 10;
 
     if (!this.hasEnoughData(candles, requiredCandles)) {
       return { action: 'hold', price: currentPrice, reason: 'Insufficient data' };
     }
 
-    // Calculate indicators
+    // Calculate all indicators
     const rsi = calculateRSI(candles, this.rsiPeriod);
     const ema = calculateEMA(candles, this.emaPeriod);
+    const adx = calculateADX(candles, this.adxPeriod);
+    const bb = calculateBollingerBands(candles, this.bbPeriod, this.bbStdDev);
+    const bbWidth = calculateBollingerWidth(candles, this.bbPeriod, this.bbStdDev);
+    const volumeRatio = getVolumeRatio(candles, 20);
 
+    // Get latest values
     const currentRSI = rsi[rsi.length - 1];
     const currentEMA = ema[ema.length - 1];
+    const currentADX = adx[adx.length - 1];
+    const currentBBLower = bb.lower[bb.lower.length - 1];
+    const currentBBWidth = bbWidth[bbWidth.length - 1];
 
-    // Check if indicators are ready
-    if (currentRSI === 0 || currentEMA === 0) {
+    // Validate indicators
+    if (currentRSI === 0 || currentEMA === 0 || currentADX === 0) {
       return { action: 'hold', price: currentPrice, reason: 'Indicators not ready' };
     }
 
     const distanceFromEMA = ((currentPrice - currentEMA) / currentEMA) * 100;
 
-    // POSITION MANAGEMENT: If we have a position, manage it
+    // POSITION MANAGEMENT
     if (this.inPosition && this.entryPrice > 0) {
       const profitPercent = ((currentPrice - this.entryPrice) / this.entryPrice) * 100;
 
@@ -69,35 +92,30 @@ export class MeanReversionStrategy extends BaseStrategy {
         this.highestProfit = profitPercent;
       }
 
-      // EXIT #1: Take profit at 4%
+      // EXIT #1: Take profit
       if (profitPercent >= this.takeProfitPercent) {
-        this.inPosition = false;
-        this.entryPrice = 0;
-        this.highestProfit = 0;
+        this.resetPosition();
         return {
           action: 'close',
           price: currentPrice,
-          reason: `MeanRev TP: +${profitPercent.toFixed(2)}% (RSI: ${currentRSI.toFixed(1)})`
+          reason: `MeanRev TP: +${profitPercent.toFixed(2)}% (RSI: ${currentRSI.toFixed(1)}, ADX: ${currentADX.toFixed(1)})`
         };
       }
 
-      // EXIT #2: Trailing stop - if we hit 3% profit and now pulled back 1.5%
-      if (this.highestProfit >= this.trailingStopPercent && profitPercent <= this.highestProfit - 1.5) {
-        this.inPosition = false;
-        this.entryPrice = 0;
-        this.highestProfit = 0;
+      // EXIT #2: Trailing stop
+      if (this.highestProfit >= this.trailingStopTrigger && profitPercent <= this.highestProfit - this.trailingStopAmount) {
+        const peakProfit = this.highestProfit;
+        this.resetPosition();
         return {
           action: 'close',
           price: currentPrice,
-          reason: `MeanRev TRAIL: +${profitPercent.toFixed(2)}% (peak: +${this.highestProfit.toFixed(2)}%, RSI: ${currentRSI.toFixed(1)})`
+          reason: `MeanRev TRAIL: +${profitPercent.toFixed(2)}% (peak: +${peakProfit.toFixed(2)}%)`
         };
       }
 
-      // EXIT #3: Stop loss at 2.5%
+      // EXIT #3: Stop loss
       if (profitPercent <= -this.stopLossPercent) {
-        this.inPosition = false;
-        this.entryPrice = 0;
-        this.highestProfit = 0;
+        this.resetPosition();
         return {
           action: 'close',
           price: currentPrice,
@@ -113,17 +131,34 @@ export class MeanReversionStrategy extends BaseStrategy {
       };
     }
 
-    // ENTRY: Simple oversold condition (RSI < 40)
-    // NO STRICT TREND REQUIREMENT - works in ranging and trending markets
+    // ═══════════════════════════════════════════════════════════
+    // CONSERVATIVE ENTRY CONDITIONS (ALL MUST BE TRUE)
+    // ═══════════════════════════════════════════════════════════
+
+    // 1. MARKET REGIME: Must be RANGING (ADX < 25)
+    const isRangingMarket = currentADX < this.adxRangingThreshold;
+
+    // 2. RSI: Strict oversold (< 28)
     const isOversold = currentRSI < this.oversoldThreshold;
 
-    // Optional: Avoid extreme downtrends (price > 10% below EMA50)
-    const notExtremeDowntrend = distanceFromEMA > -10;
+    // 3. BOLLINGER: Price at or below lower band
+    const isBelowBB = currentPrice <= currentBBLower;
 
-    if (isOversold && notExtremeDowntrend && !this.inPosition) {
-      const stopLoss = currentPrice * (1 - this.stopLossPercent / 100); // 2.5% stop
-      const takeProfit = currentPrice * (1 + this.takeProfitPercent / 100); // 4% target
-      // Risk/Reward = 1:1.6
+    // 4. VOLATILITY: BB Width < 4% (low volatility)
+    const isLowVolatility = currentBBWidth < this.bbWidthMaxThreshold;
+
+    // 5. VOLUME: Above 1.2x average
+    const hasVolumeConfirmation = volumeRatio >= this.volumeMultiplier;
+
+    // 6. CRASH AVOIDANCE: Not too far below EMA50
+    const notCrashing = distanceFromEMA > -this.maxDistanceBelowEMA;
+
+    // ALL CONDITIONS MUST BE TRUE
+    const hasEntrySignal = isRangingMarket && isOversold && isBelowBB && isLowVolatility && hasVolumeConfirmation && notCrashing;
+
+    if (hasEntrySignal && !this.inPosition) {
+      const stopLoss = currentPrice * (1 - this.stopLossPercent / 100);
+      const takeProfit = currentPrice * (1 + this.takeProfitPercent / 100);
 
       this.inPosition = true;
       this.entryPrice = currentPrice;
@@ -134,21 +169,25 @@ export class MeanReversionStrategy extends BaseStrategy {
         price: currentPrice,
         stopLoss,
         takeProfit,
-        reason: `MeanRev BUY: Oversold bounce (RSI: ${currentRSI.toFixed(1)}, EMA: ${distanceFromEMA.toFixed(2)}%) [1:1.6 R:R]`
+        reason: `MeanRev BUY: RSI ${currentRSI.toFixed(1)} | ADX ${currentADX.toFixed(1)} | BB ${isBelowBB ? 'Below' : 'Above'} | Vol ${volumeRatio.toFixed(2)}x [1:2.3 R:R]`
       };
     }
 
-    // HOLD: Waiting for setup
-    let reason = 'Waiting for oversold (RSI < 40)';
+    // HOLD: Build detailed reason for waiting
+    let reason = 'Waiting for setup';
 
-    if (currentRSI < 45) {
-      reason = `Approaching oversold (RSI: ${currentRSI.toFixed(1)}, need < ${this.oversoldThreshold})`;
-    } else if (currentRSI > 60) {
-      reason = `Overbought, wait for pullback (RSI: ${currentRSI.toFixed(1)})`;
-    } else if (!notExtremeDowntrend) {
-      reason = `Strong downtrend, paused (${distanceFromEMA.toFixed(2)}% below EMA50)`;
-    } else {
-      reason = `Neutral (RSI: ${currentRSI.toFixed(1)}, EMA: ${distanceFromEMA.toFixed(2)}%)`;
+    if (!isRangingMarket) {
+      reason = `Trending market (ADX: ${currentADX.toFixed(1)} > ${this.adxRangingThreshold}). Mean reversion disabled.`;
+    } else if (!isOversold) {
+      reason = `Not oversold (RSI: ${currentRSI.toFixed(1)}, need < ${this.oversoldThreshold})`;
+    } else if (!isBelowBB) {
+      reason = `Above BB lower. Wait for price at/below $${currentBBLower.toFixed(2)}`;
+    } else if (!isLowVolatility) {
+      reason = `High volatility (BB Width: ${currentBBWidth.toFixed(2)}% > ${this.bbWidthMaxThreshold}%)`;
+    } else if (!hasVolumeConfirmation) {
+      reason = `Low volume (${volumeRatio.toFixed(2)}x, need >= ${this.volumeMultiplier}x)`;
+    } else if (!notCrashing) {
+      reason = `Crash avoidance active (${distanceFromEMA.toFixed(2)}% below EMA50)`;
     }
 
     return {
@@ -158,18 +197,16 @@ export class MeanReversionStrategy extends BaseStrategy {
     };
   }
 
-  /**
-   * Reset strategy state
-   */
-  public reset(): void {
+  private resetPosition(): void {
     this.inPosition = false;
     this.entryPrice = 0;
     this.highestProfit = 0;
   }
 
-  /**
-   * Restore state from existing position (called on bot restart)
-   */
+  public reset(): void {
+    this.resetPosition();
+  }
+
   public restorePositionState(entryPrice: number, currentPrice: number): void {
     this.inPosition = true;
     this.entryPrice = entryPrice;
