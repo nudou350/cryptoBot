@@ -3,25 +3,25 @@ import { Candle, TradeSignal } from '../types';
 import { calculateEMA, calculateRSI, calculateADX, getVolumeRatio, isBullishCandle } from '../utils/indicators';
 
 /**
- * Pullback/Hybrid Strategy - CONSERVATIVE MODE (68-72% WIN RATE TARGET)
+ * Pullback/Hybrid Strategy - BALANCED MODE (60-65% WIN RATE TARGET)
  *
- * Best for: TRENDING MARKETS ONLY (ADX > 25)
- * Win Rate Target: 68-72%
+ * Best for: TRENDING MARKETS (ADX > 22)
+ * Win Rate Target: 60-65%
  * Risk Level: Medium
  *
- * CONSERVATIVE PARAMETERS:
- * - ADX > 25 (confirmed trend - OPPOSITE of MeanReversion)
+ * BALANCED PARAMETERS:
+ * - ADX > 22 (trending market - OPPOSITE of MeanReversion)
  * - EMA alignment: EMA9 > EMA21 > EMA50 (bullish stack)
- * - RSI < 32 AND RSI > 20 (pullback but not crash)
- * - Price within 1.5-3% of EMA21 (pullback zone)
+ * - RSI < 45 AND RSI > 25 (pullback but not crash)
+ * - Price within 0.5-4% of EMA21 (wider pullback zone)
  * - Current candle is bullish (entry confirmation)
- * - Volume > 1.0x average
+ * - Volume > 0.8x average
  * - 1.5% stop loss (tight)
  * - 4.5% take profit (R:R = 1:3)
  *
  * Strategy Rules:
- * - ONLY trade when ADX > 25 AND EMA stack aligned
- * - Entry: Pullback to EMA21 + RSI < 32 + Bullish candle
+ * - ONLY trade when ADX > 22 AND EMA stack aligned
+ * - Entry: Pullback to EMA21 + RSI < 45 + Bullish candle
  * - Exit: +4.5% TP or -1.5% SL or trailing (2.5% trigger, 1% trail)
  */
 export class SashaHybridOptimizedStrategy extends BaseStrategy {
@@ -32,13 +32,13 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
   private readonly ema50Period: number = 50; // Slow EMA for context
   private readonly adxPeriod: number = 14;
 
-  // CONSERVATIVE THRESHOLDS
-  private readonly adxTrendingThreshold: number = 25; // Must be TRENDING
-  private readonly rsiOversoldThreshold: number = 32; // Pullback threshold (was 45)
-  private readonly rsiCrashThreshold: number = 20; // Too low = crash
-  private readonly pullbackMinPercent: number = 1.5; // Min distance from EMA21
-  private readonly pullbackMaxPercent: number = 3.0; // Max distance from EMA21
-  private readonly volumeMultiplier: number = 1.0; // 1.0x average volume
+  // BALANCED THRESHOLDS
+  private readonly adxTrendingThreshold: number = 22; // Must be TRENDING
+  private readonly rsiOversoldThreshold: number = 45; // Pullback threshold
+  private readonly rsiCrashThreshold: number = 25; // Too low = crash
+  private readonly pullbackMinPercent: number = 0.5; // Min distance from EMA21
+  private readonly pullbackMaxPercent: number = 4.0; // Max distance from EMA21
+  private readonly volumeMultiplier: number = 0.8; // 0.8x average volume (less strict)
 
   // CONSERVATIVE RISK MANAGEMENT
   private readonly stopLossPercent: number = 1.5; // TIGHT (was 2.5%)

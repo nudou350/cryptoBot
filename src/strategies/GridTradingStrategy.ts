@@ -3,24 +3,24 @@ import { Candle, TradeSignal } from '../types';
 import { calculateSMA, calculateEMA, calculateRSI, calculateADX, calculateBollingerWidth, getVolumeRatio } from '../utils/indicators';
 
 /**
- * Grid Trading Strategy - CONSERVATIVE MODE (72-78% WIN RATE TARGET)
+ * Grid Trading Strategy - BALANCED MODE (65-70% WIN RATE TARGET)
  *
- * Best for: TIGHT RANGING MARKETS ONLY (ADX < 22, BB Width < 3.5%)
- * Win Rate Target: 72-78%
+ * Best for: RANGING MARKETS (ADX < 28, BB Width < 5%)
+ * Win Rate Target: 65-70%
  * Risk Level: Low
  *
- * CONSERVATIVE PARAMETERS:
- * - ADX < 22 (strict ranging)
- * - RSI between 22-40 (deeper oversold zone)
- * - Dip 1.5-4% below SMA20 (larger grid)
- * - BB Width < 3.5% (tight range confirmation)
- * - Volume > 1.0x average
+ * BALANCED PARAMETERS:
+ * - ADX < 28 (ranging market)
+ * - RSI between 20-45 (oversold zone)
+ * - Dip 1.0-5% below SMA20 (wider grid)
+ * - BB Width < 5% (normal range acceptable)
+ * - Volume > 0.8x average
  * - 1.5% stop loss (tight)
  * - 2.5% take profit (R:R = 1:1.67)
  *
  * Strategy Rules:
- * - ONLY trade when ADX < 22 AND BB Width < 3.5%
- * - Entry: RSI 22-40 AND 1.5-4% below SMA20 AND Volume confirm
+ * - ONLY trade when ADX < 28 AND BB Width < 5%
+ * - Entry: RSI 20-45 AND 1.0-5% below SMA20 AND Volume confirm
  * - Exit: +2.5% TP or -1.5% SL or trailing (1.8% trigger)
  */
 export class GridTradingStrategy extends BaseStrategy {
@@ -31,14 +31,14 @@ export class GridTradingStrategy extends BaseStrategy {
   private readonly adxPeriod: number = 14;
   private readonly bbPeriod: number = 20;
 
-  // CONSERVATIVE THRESHOLDS
-  private readonly adxRangingThreshold: number = 22; // Stricter than MeanReversion
-  private readonly bbWidthMaxThreshold: number = 3.5; // Tight range only
-  private readonly rsiLowerBound: number = 22; // Deeper oversold
-  private readonly rsiUpperBound: number = 40; // Still in oversold zone
-  private readonly dipMinPercent: number = 1.5; // Minimum dip below SMA (was 0.5%)
-  private readonly dipMaxPercent: number = 4.0; // Maximum dip below SMA (was 2%)
-  private readonly volumeMultiplier: number = 1.0; // 1.0x average volume
+  // BALANCED THRESHOLDS
+  private readonly adxRangingThreshold: number = 28; // Ranging market filter
+  private readonly bbWidthMaxThreshold: number = 5; // Normal range acceptable
+  private readonly rsiLowerBound: number = 20; // Oversold zone
+  private readonly rsiUpperBound: number = 45; // Still in oversold zone
+  private readonly dipMinPercent: number = 1.0; // Minimum dip below SMA
+  private readonly dipMaxPercent: number = 5.0; // Maximum dip below SMA
+  private readonly volumeMultiplier: number = 0.8; // 0.8x average volume (less strict)
 
   // CONSERVATIVE RISK MANAGEMENT
   private readonly stopLossPercent: number = 1.5; // TIGHT (was 2.5%)

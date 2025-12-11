@@ -3,24 +3,24 @@ import { Candle, TradeSignal } from '../types';
 import { calculateRSI, calculateEMA, calculateADX, calculateBollingerBands, calculateBollingerWidth, getVolumeRatio } from '../utils/indicators';
 
 /**
- * Mean Reversion Strategy - CONSERVATIVE MODE (70%+ WIN RATE TARGET)
+ * Mean Reversion Strategy - BALANCED MODE (65%+ WIN RATE TARGET)
  *
- * Best for: RANGING MARKETS ONLY (ADX < 25)
- * Win Rate Target: 70-75%
+ * Best for: RANGING MARKETS (ADX < 30)
+ * Win Rate Target: 65-70%
  * Risk Level: Low-Medium
  *
- * CONSERVATIVE PARAMETERS:
- * - RSI < 28 (strict oversold - not 40)
- * - ADX < 25 (ranging market filter - CRITICAL)
+ * BALANCED PARAMETERS:
+ * - RSI < 38 (reasonable oversold level)
+ * - ADX < 30 (ranging market filter)
  * - Price at or below Bollinger Lower Band
- * - Volume > 1.2x average (strong confirmation)
- * - BB Width < 4% (low volatility)
+ * - Volume > 1.0x average (basic confirmation)
+ * - BB Width < 6% (normal volatility acceptable)
  * - 1.5% stop loss (tight)
  * - 3.5% take profit (R:R = 1:2.3)
  *
  * Strategy Rules:
- * - ONLY trade when market is RANGING (ADX < 25)
- * - Entry: RSI < 28 + Below BB Lower + Volume confirm
+ * - ONLY trade when market is RANGING (ADX < 30)
+ * - Entry: RSI < 38 + Below BB Lower + Volume confirm
  * - Exit: +3.5% TP or -1.5% SL or trailing (2% trigger, 1% trail)
  */
 export class MeanReversionStrategy extends BaseStrategy {
@@ -31,11 +31,11 @@ export class MeanReversionStrategy extends BaseStrategy {
   private readonly bbPeriod: number = 20;
   private readonly bbStdDev: number = 2;
 
-  // CONSERVATIVE THRESHOLDS
-  private readonly oversoldThreshold: number = 28; // STRICT (was 40)
-  private readonly adxRangingThreshold: number = 25; // Market must be ranging
-  private readonly bbWidthMaxThreshold: number = 4; // Low volatility only
-  private readonly volumeMultiplier: number = 1.2; // 1.2x average volume
+  // BALANCED THRESHOLDS
+  private readonly oversoldThreshold: number = 38; // Reasonable oversold level
+  private readonly adxRangingThreshold: number = 30; // Market must be ranging
+  private readonly bbWidthMaxThreshold: number = 6; // Normal volatility acceptable
+  private readonly volumeMultiplier: number = 1.0; // 1.0x average volume
 
   // CONSERVATIVE RISK MANAGEMENT
   private readonly stopLossPercent: number = 1.5; // TIGHT (was 2.5%)
