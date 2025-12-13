@@ -51,19 +51,19 @@ export class RealTradingEngine {
   private readonly REDUCE_SIZE_AFTER_LOSSES: number = 2; // Reduce position size after 2 losses
   private positionSizeMultiplier: number = 1.0; // Starts at 1.0, reduces to 0.5 after 2 losses
 
-  // DAILY LOSS LIMIT PROTECTION - CONSERVATIVE
-  private dailyLossLimit: number = 0.025; // CONSERVATIVE: 2.5% max daily loss (was 5%)
+  // DAILY LOSS LIMIT PROTECTION - OPTIMIZED FOR ACTIVE TRADING
+  private dailyLossLimit: number = 0.05; // 5% max daily loss (reasonable for active trading)
   private dailyStartBalance: number = 0;
   private dailyStartTime: number = 0;
   private dailyLossTriggered: boolean = false;
 
-  // TRADES PER DAY LIMIT - CONSERVATIVE
-  private maxTradesPerDay: number = 4; // CONSERVATIVE: 4 trades per day (was 10)
+  // TRADES PER DAY LIMIT - OPTIMIZED FOR MORE TRADES
+  private maxTradesPerDay: number = 15; // 15 trades per day (allows 5 trades per bot)
   private dailyTradeCount: number = 0;
   private tradesPerDayTriggered: boolean = false;
 
-  // HOURLY LOSS RATE PROTECTION - CONSERVATIVE
-  private hourlyLossLimit: number = 0.01; // CONSERVATIVE: 1% max hourly loss (was 2%)
+  // HOURLY LOSS RATE PROTECTION - OPTIMIZED
+  private hourlyLossLimit: number = 0.02; // 2% max hourly loss
   private hourlyPnLHistory: Array<{ timestamp: number; pnl: number }> = [];
 
   constructor(
@@ -772,9 +772,11 @@ export class RealTradingEngine {
       return;
     }
 
-    // Calculate position size - CONSERVATIVE
-      const maxPositionValue = this.currentBudget * 0.08; // CONSERVATIVE: 8% max (was 15%)
-      const positionValue = Math.min(maxPositionValue, this.currentBudget * 0.06) * this.positionSizeMultiplier; // CONSERVATIVE: 6% default * multiplier
+    // OPTIMIZED POSITION SIZING FOR $500 BUDGET
+      // With $500 budget: 15% = $75 per trade (reasonable for active trading)
+      // Risk per trade with 2% SL = $1.50 (0.3% of capital)
+      const maxPositionValue = this.currentBudget * 0.20; // Max 20% ($100) per trade
+      const positionValue = Math.min(maxPositionValue, this.currentBudget * 0.15) * this.positionSizeMultiplier; // Default 15% ($75) * multiplier
       const amount = positionValue / currentPrice;
 
       // Round amount to exchange precision
