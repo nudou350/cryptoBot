@@ -3,51 +3,48 @@ import { Candle, TradeSignal } from '../types';
 import { calculateEMA, calculateRSI, calculateADX, getVolumeRatio, isBullishCandle } from '../utils/indicators';
 
 /**
- * Pullback/Hybrid Strategy - BALANCED MODE (60-65% WIN RATE TARGET)
+ * Pullback/Hybrid Strategy - HIGH WIN RATE MODE (70%+ TARGET)
  *
- * Best for: TRENDING MARKETS (ADX > 22)
- * Win Rate Target: 60-65%
+ * Best for: PULLBACKS IN UPTRENDS
+ * Win Rate Target: 70%+
  * Risk Level: Medium
  *
- * BALANCED PARAMETERS:
- * - ADX > 22 (trending market - OPPOSITE of MeanReversion)
- * - EMA alignment: EMA9 > EMA21 > EMA50 (bullish stack)
- * - RSI < 45 AND RSI > 25 (pullback but not crash)
- * - Price within 0.5-4% of EMA21 (wider pullback zone)
- * - Current candle is bullish (entry confirmation)
- * - Volume > 0.8x average
- * - 1.5% stop loss (tight)
- * - 4.5% take profit (R:R = 1:3)
+ * OPTIMIZED PARAMETERS:
+ * - Uptrend confirmed (EMA21 > EMA50, price near EMA21)
+ * - RSI pullback (20-50) - wider range for more opportunities
+ * - Price near EMA21 support (±6% range)
+ * - Bullish reversal candle (confirmation)
+ * - Volume > 0.7x average (relaxed)
+ * - 2.0% stop loss (reasonable)
+ * - 5.5% take profit (R:R = 1:2.75)
  *
  * Strategy Rules:
- * - ONLY trade when ADX > 22 AND EMA stack aligned
- * - Entry: Pullback to EMA21 + RSI < 45 + Bullish candle
- * - Exit: +4.5% TP or -1.5% SL or trailing (2.5% trigger, 1% trail)
+ * - Trade pullbacks when EMA21 > EMA50 (simple uptrend)
+ * - Entry: RSI reset + pullback to EMA21 + bullish candle
+ * - Exit: +5.5% TP or -2.0% SL or trailing (3% trigger, 1.2% trail)
  */
 export class SashaHybridOptimizedStrategy extends BaseStrategy {
-  // CONSERVATIVE PARAMETERS
+  // OPTIMIZED PARAMETERS
   private readonly rsiPeriod: number = 14;
-  private readonly ema9Period: number = 9;   // Fast EMA for stack
-  private readonly ema21Period: number = 21; // Medium EMA (pullback level)
-  private readonly ema50Period: number = 50; // Slow EMA for context
+  private readonly ema9Period: number = 9;   // Fast EMA (optional)
+  private readonly ema21Period: number = 21; // Key pullback level
+  private readonly ema50Period: number = 50; // Trend filter
   private readonly adxPeriod: number = 14;
 
-  // BALANCED THRESHOLDS
-  private readonly adxTrendingThreshold: number = 22; // Must be TRENDING
-  private readonly rsiOversoldThreshold: number = 45; // Pullback threshold
-  private readonly rsiCrashThreshold: number = 25; // Too low = crash
-  private readonly pullbackMinPercent: number = 0.5; // Min distance from EMA21
-  private readonly pullbackMaxPercent: number = 4.0; // Max distance from EMA21
-  private readonly volumeMultiplier: number = 0.8; // 0.8x average volume (less strict)
+  // RELAXED THRESHOLDS FOR MORE TRADES
+  private readonly rsiLowerBound: number = 20; // Oversold but not extreme
+  private readonly rsiUpperBound: number = 50; // Extended pullback zone (relaxed from 45)
+  private readonly pullbackMaxPercent: number = 6.0; // Max distance from EMA21 (relaxed from 4.0)
+  private readonly volumeMultiplier: number = 0.7; // 0.7x average volume (relaxed from 0.8)
 
-  // CONSERVATIVE RISK MANAGEMENT
-  private readonly stopLossPercent: number = 1.5; // TIGHT (was 2.5%)
-  private readonly takeProfitPercent: number = 4.5; // Higher for trends (R:R = 1:3)
-  private readonly trailingStopTrigger: number = 2.5; // Trail at 2.5% profit
-  private readonly trailingStopAmount: number = 1.0; // Trail back 1%
+  // IMPROVED RISK MANAGEMENT
+  private readonly stopLossPercent: number = 2.0; // Reasonable stop (was 1.5%)
+  private readonly takeProfitPercent: number = 5.5; // Better R:R (was 4.5%, now 1:2.75)
+  private readonly trailingStopTrigger: number = 3.0; // Trail at 3% profit
+  private readonly trailingStopAmount: number = 1.2; // Trail back 1.2%
 
-  // CRASH AVOIDANCE
-  private readonly maxDistanceBelowEMA50: number = 8; // Avoid if > 8% below EMA50
+  // CRASH AVOIDANCE (RELAXED)
+  private readonly maxDistanceBelowEMA50: number = 10; // Avoid if > 10% below EMA50 (relaxed from 8%)
 
   private inPosition: boolean = false;
   private entryPrice: number = 0;
@@ -137,37 +134,30 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // CONSERVATIVE ENTRY CONDITIONS (ALL MUST BE TRUE)
+    // SIMPLIFIED ENTRY CONDITIONS (4 CORE FILTERS)
     // ═══════════════════════════════════════════════════════════
 
-    // 1. MARKET REGIME: Must be TRENDING (ADX > 25)
-    const isTrendingMarket = currentADX > this.adxTrendingThreshold;
+    // 1. UPTREND: Simple check - EMA21 > EMA50 (uptrend structure)
+    const isUptrend = currentEMA21 > currentEMA50;
 
-    // 2. EMA ALIGNMENT: Bullish stack (EMA9 > EMA21 > EMA50)
-    const isEmaAligned = currentEMA9 > currentEMA21 && currentEMA21 > currentEMA50;
+    // 2. RSI: Pullback zone (20-50) - wider range for more opportunities
+    const isInPullbackZone = currentRSI >= this.rsiLowerBound && currentRSI <= this.rsiUpperBound;
 
-    // 3. RSI: Pullback zone (20 < RSI < 32)
-    const isInPullbackZone = currentRSI < this.rsiOversoldThreshold && currentRSI > this.rsiCrashThreshold;
-
-    // 4. PULLBACK LEVEL: Price within 1.5-3% of EMA21
-    // For pullbacks in uptrend, we look for price that has pulled back BELOW EMA21 or near it
+    // 3. PULLBACK TO SUPPORT: Price near EMA21 (±6% range)
     const absDistanceFromEMA21 = Math.abs(distanceFromEMA21);
-    const isInPullbackRange = absDistanceFromEMA21 <= this.pullbackMaxPercent && absDistanceFromEMA21 >= this.pullbackMinPercent / 2;
+    const isNearEMA21 = absDistanceFromEMA21 <= this.pullbackMaxPercent;
 
-    // 5. CANDLE CONFIRMATION: Current candle is bullish
+    // 4. BULLISH REVERSAL: Current candle is bullish (entry confirmation)
     const isBullish = isBullishCandle(currentCandle);
 
-    // 6. VOLUME: Above 1.0x average
+    // 5. VOLUME: Above 0.7x average (basic confirmation)
     const hasVolumeConfirmation = volumeRatio >= this.volumeMultiplier;
 
-    // 7. CRASH AVOIDANCE: Not too far below EMA50
+    // BONUS: Not in crash mode (price not too far below EMA50)
     const notCrashing = distanceFromEMA50 > -this.maxDistanceBelowEMA50;
 
-    // 8. PRICE ABOVE EMA50: Basic trend confirmation
-    const priceAboveEMA50 = currentPrice > currentEMA50;
-
-    // ALL CONDITIONS MUST BE TRUE
-    const hasEntrySignal = isTrendingMarket && isEmaAligned && isInPullbackZone && isInPullbackRange && isBullish && hasVolumeConfirmation && notCrashing && priceAboveEMA50;
+    // ENTRY SIGNAL: All 5 core conditions + bonus
+    const hasEntrySignal = isUptrend && isInPullbackZone && isNearEMA21 && isBullish && hasVolumeConfirmation && notCrashing;
 
     if (hasEntrySignal && !this.inPosition) {
       const stopLoss = currentPrice * (1 - this.stopLossPercent / 100);
@@ -182,33 +172,29 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
         price: currentPrice,
         stopLoss,
         takeProfit,
-        reason: `Hybrid BUY: RSI ${currentRSI.toFixed(1)} | ADX ${currentADX.toFixed(1)} | EMA21 ${distanceFromEMA21.toFixed(2)}% | ${isBullish ? 'Bullish' : 'Bearish'} [1:3 R:R]`
+        reason: `Hybrid BUY: RSI ${currentRSI.toFixed(1)} | EMA21 ${distanceFromEMA21.toFixed(2)}% | Bullish | Vol ${volumeRatio.toFixed(2)}x [1:2.75 R:R]`
       };
     }
 
     // HOLD: Build detailed reason for waiting
-    let reason = 'Waiting for pullback';
+    let reason = 'Waiting for pullback setup';
 
-    if (!isTrendingMarket) {
-      reason = `Not trending (ADX: ${currentADX.toFixed(1)} < ${this.adxTrendingThreshold}). Hybrid disabled.`;
-    } else if (!isEmaAligned) {
-      reason = `EMA not aligned. Need EMA9 > EMA21 > EMA50. Current: ${currentEMA9.toFixed(0)} / ${currentEMA21.toFixed(0)} / ${currentEMA50.toFixed(0)}`;
-    } else if (!priceAboveEMA50) {
-      reason = `Price below EMA50 (${distanceFromEMA50.toFixed(2)}%). Wait for trend recovery.`;
+    if (!isUptrend) {
+      reason = `No uptrend (EMA21: ${currentEMA21.toFixed(0)} vs EMA50: ${currentEMA50.toFixed(0)}). Need EMA21 > EMA50.`;
     } else if (!isInPullbackZone) {
-      if (currentRSI >= this.rsiOversoldThreshold) {
-        reason = `RSI not pulled back (${currentRSI.toFixed(1)}, need < ${this.rsiOversoldThreshold})`;
+      if (currentRSI < this.rsiLowerBound) {
+        reason = `RSI too low (${currentRSI.toFixed(1)} < ${this.rsiLowerBound}). Wait for bounce.`;
       } else {
-        reason = `RSI too low (${currentRSI.toFixed(1)} < ${this.rsiCrashThreshold}). Crash risk.`;
+        reason = `RSI not pulled back (${currentRSI.toFixed(1)}, need ${this.rsiLowerBound}-${this.rsiUpperBound})`;
       }
-    } else if (!isInPullbackRange) {
-      reason = `Price not at EMA21 pullback zone (${distanceFromEMA21.toFixed(2)}%, need ${-this.pullbackMaxPercent}% to +${this.pullbackMaxPercent}%)`;
+    } else if (!isNearEMA21) {
+      reason = `Price not near EMA21 (${distanceFromEMA21.toFixed(2)}%, need within ±${this.pullbackMaxPercent}%)`;
     } else if (!isBullish) {
       reason = `Waiting for bullish candle confirmation`;
     } else if (!hasVolumeConfirmation) {
       reason = `Low volume (${volumeRatio.toFixed(2)}x, need >= ${this.volumeMultiplier}x)`;
     } else if (!notCrashing) {
-      reason = `Crash avoidance active (${distanceFromEMA50.toFixed(2)}% below EMA50)`;
+      reason = `Crash avoidance (${distanceFromEMA50.toFixed(2)}% below EMA50, max ${-this.maxDistanceBelowEMA50}%)`;
     }
 
     return {
