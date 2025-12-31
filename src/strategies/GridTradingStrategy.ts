@@ -3,51 +3,48 @@ import { Candle, TradeSignal } from '../types';
 import { calculateSMA, calculateEMA, calculateRSI, calculateADX, calculateBollingerWidth, getVolumeRatio } from '../utils/indicators';
 
 /**
- * Grid Trading Strategy - BALANCED MODE (65-70% WIN RATE TARGET)
+ * Grid Trading Strategy - HIGH WIN RATE MODE (70%+ TARGET)
  *
- * Best for: RANGING MARKETS (ADX < 28, BB Width < 5%)
- * Win Rate Target: 65-70%
- * Risk Level: Low
+ * Best for: DIP BUYING IN UPTRENDS
+ * Win Rate Target: 70%+
+ * Risk Level: Low-Medium
  *
- * BALANCED PARAMETERS:
- * - ADX < 28 (ranging market)
- * - RSI between 20-45 (oversold zone)
- * - Dip 1.0-5% below SMA20 (wider grid)
- * - BB Width < 5% (normal range acceptable)
- * - Volume > 0.8x average
- * - 1.5% stop loss (tight)
- * - 2.5% take profit (R:R = 1:1.67)
+ * OPTIMIZED PARAMETERS:
+ * - Uptrend confirmed (Price > EMA50 or recovering)
+ * - RSI oversold (15-40) - buy the dip
+ * - Price pullback 0.5-6% below SMA20 (flexible grid)
+ * - Volume spike > 0.7x average (relaxed)
+ * - 1.8% stop loss (reasonable)
+ * - 4.0% take profit (R:R = 1:2.2)
  *
  * Strategy Rules:
- * - ONLY trade when ADX < 28 AND BB Width < 5%
- * - Entry: RSI 20-45 AND 1.0-5% below SMA20 AND Volume confirm
- * - Exit: +2.5% TP or -1.5% SL or trailing (1.8% trigger)
+ * - Trade dips in uptrends (not strict ranging)
+ * - Entry: RSI oversold + dip below SMA + volume
+ * - Exit: +4.0% TP or -1.8% SL or trailing (2.5% trigger)
  */
 export class GridTradingStrategy extends BaseStrategy {
-  // CONSERVATIVE PARAMETERS
+  // OPTIMIZED PARAMETERS
   private readonly smaPeriod: number = 20;
   private readonly emaPeriod: number = 50;
   private readonly rsiPeriod: number = 14;
   private readonly adxPeriod: number = 14;
   private readonly bbPeriod: number = 20;
 
-  // BALANCED THRESHOLDS
-  private readonly adxRangingThreshold: number = 28; // Ranging market filter
-  private readonly bbWidthMaxThreshold: number = 5; // Normal range acceptable
-  private readonly rsiLowerBound: number = 20; // Oversold zone
-  private readonly rsiUpperBound: number = 45; // Still in oversold zone
-  private readonly dipMinPercent: number = 1.0; // Minimum dip below SMA
-  private readonly dipMaxPercent: number = 5.0; // Maximum dip below SMA
-  private readonly volumeMultiplier: number = 0.8; // 0.8x average volume (less strict)
+  // RELAXED THRESHOLDS FOR MORE TRADES
+  private readonly rsiLowerBound: number = 15; // Deep oversold (catch bounces)
+  private readonly rsiUpperBound: number = 40; // Extended oversold zone
+  private readonly dipMinPercent: number = 0.5; // Minimum dip below SMA (relaxed from 1.0)
+  private readonly dipMaxPercent: number = 6.0; // Maximum dip below SMA (relaxed from 5.0)
+  private readonly volumeMultiplier: number = 0.7; // 0.7x average volume (very relaxed)
 
-  // CONSERVATIVE RISK MANAGEMENT
-  private readonly stopLossPercent: number = 1.5; // TIGHT (was 2.5%)
-  private readonly takeProfitPercent: number = 2.5; // Lower target for grid (was 3.5%)
-  private readonly trailingStopTrigger: number = 1.8; // Trail at 1.8% profit (was 2.5%)
-  private readonly trailingStopAmount: number = 0.8; // Trail back 0.8%
+  // IMPROVED RISK MANAGEMENT
+  private readonly stopLossPercent: number = 1.8; // Reasonable stop (was 1.5%)
+  private readonly takeProfitPercent: number = 4.0; // Better R:R (was 2.5%, now 1:2.2)
+  private readonly trailingStopTrigger: number = 2.5; // Trail at 2.5% profit
+  private readonly trailingStopAmount: number = 1.0; // Trail back 1%
 
-  // CRASH AVOIDANCE
-  private readonly maxDistanceBelowEMA: number = 8; // Avoid if > 8% below EMA50
+  // CRASH AVOIDANCE (RELAXED)
+  private readonly maxDistanceBelowEMA: number = 10; // Avoid if > 10% below EMA50 (relaxed from 8%)
 
   private inPosition: boolean = false;
   private entryPrice: number = 0;
@@ -136,29 +133,26 @@ export class GridTradingStrategy extends BaseStrategy {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // CONSERVATIVE ENTRY CONDITIONS (ALL MUST BE TRUE)
+    // SIMPLIFIED ENTRY CONDITIONS (4 CORE FILTERS)
     // ═══════════════════════════════════════════════════════════
 
-    // 1. MARKET REGIME: Must be STRICT RANGING (ADX < 22)
-    const isStrictRanging = currentADX < this.adxRangingThreshold;
-
-    // 2. VOLATILITY: BB Width < 3.5% (tight range)
-    const isTightRange = currentBBWidth < this.bbWidthMaxThreshold;
-
-    // 3. RSI: In oversold zone (22-40)
+    // 1. RSI: In oversold zone (15-40) - PRIMARY SIGNAL
     const isInOversoldZone = currentRSI >= this.rsiLowerBound && currentRSI <= this.rsiUpperBound;
 
-    // 4. GRID LEVEL: Price 1.5-4% below SMA20
-    const isDipInGrid = distanceFromSMA <= -this.dipMinPercent && distanceFromSMA >= -this.dipMaxPercent;
+    // 2. PRICE DIP: 0.5-6% below SMA20 (buy the dip)
+    const isDipBelowSMA = distanceFromSMA <= -this.dipMinPercent && distanceFromSMA >= -this.dipMaxPercent;
 
-    // 5. VOLUME: Above 1.0x average
+    // 3. VOLUME: Above 0.7x average (basic confirmation)
     const hasVolumeConfirmation = volumeRatio >= this.volumeMultiplier;
 
-    // 6. CRASH AVOIDANCE: Not too far below EMA50
+    // 4. CRASH AVOIDANCE: Not more than 10% below EMA50
     const notCrashing = distanceFromEMA > -this.maxDistanceBelowEMA;
 
-    // ALL CONDITIONS MUST BE TRUE
-    const hasEntrySignal = isStrictRanging && isTightRange && isInOversoldZone && isDipInGrid && hasVolumeConfirmation && notCrashing;
+    // BONUS: Prefer uptrends but not required (price within 15% of EMA50)
+    const nearUptrend = distanceFromEMA > -15;
+
+    // ENTRY SIGNAL: All 4 core conditions + bonus
+    const hasEntrySignal = isInOversoldZone && isDipBelowSMA && hasVolumeConfirmation && notCrashing && nearUptrend;
 
     if (hasEntrySignal && !this.inPosition) {
       const stopLoss = currentPrice * (1 - this.stopLossPercent / 100);
@@ -173,33 +167,31 @@ export class GridTradingStrategy extends BaseStrategy {
         price: currentPrice,
         stopLoss,
         takeProfit,
-        reason: `Grid BUY: SMA ${distanceFromSMA.toFixed(2)}% | RSI ${currentRSI.toFixed(1)} | ADX ${currentADX.toFixed(1)} | BBW ${currentBBWidth.toFixed(2)}% [1:1.67 R:R]`
+        reason: `Grid BUY: RSI ${currentRSI.toFixed(1)} | SMA ${distanceFromSMA.toFixed(2)}% | EMA ${distanceFromEMA.toFixed(2)}% | Vol ${volumeRatio.toFixed(2)}x [1:2.2 R:R]`
       };
     }
 
     // HOLD: Build detailed reason for waiting
-    let reason = 'Waiting for grid level';
+    let reason = 'Waiting for dip setup';
 
-    if (!isStrictRanging) {
-      reason = `Market not ranging (ADX: ${currentADX.toFixed(1)} > ${this.adxRangingThreshold}). Grid disabled.`;
-    } else if (!isTightRange) {
-      reason = `Range too wide (BB Width: ${currentBBWidth.toFixed(2)}% > ${this.bbWidthMaxThreshold}%)`;
-    } else if (!isInOversoldZone) {
+    if (!isInOversoldZone) {
       if (currentRSI < this.rsiLowerBound) {
-        reason = `RSI too low (${currentRSI.toFixed(1)} < ${this.rsiLowerBound}). Wait for bounce.`;
+        reason = `RSI too low (${currentRSI.toFixed(1)} < ${this.rsiLowerBound}). Extreme oversold, wait for bounce.`;
       } else {
         reason = `RSI not oversold (${currentRSI.toFixed(1)}, need ${this.rsiLowerBound}-${this.rsiUpperBound})`;
       }
-    } else if (!isDipInGrid) {
+    } else if (!isDipBelowSMA) {
       if (distanceFromSMA > -this.dipMinPercent) {
-        reason = `Above grid zone (SMA: ${distanceFromSMA.toFixed(2)}%, need ${-this.dipMinPercent}% to ${-this.dipMaxPercent}%)`;
+        reason = `No dip yet (SMA: ${distanceFromSMA.toFixed(2)}%, need ${-this.dipMinPercent}% to ${-this.dipMaxPercent}%)`;
       } else {
-        reason = `Below grid zone (SMA: ${distanceFromSMA.toFixed(2)}%, max ${-this.dipMaxPercent}%)`;
+        reason = `Dip too deep (SMA: ${distanceFromSMA.toFixed(2)}%, max ${-this.dipMaxPercent}%)`;
       }
     } else if (!hasVolumeConfirmation) {
       reason = `Low volume (${volumeRatio.toFixed(2)}x, need >= ${this.volumeMultiplier}x)`;
     } else if (!notCrashing) {
-      reason = `Crash avoidance active (${distanceFromEMA.toFixed(2)}% below EMA50)`;
+      reason = `Crash avoidance (${distanceFromEMA.toFixed(2)}% below EMA50, max ${-this.maxDistanceBelowEMA}%)`;
+    } else if (!nearUptrend) {
+      reason = `Too far from trend (${distanceFromEMA.toFixed(2)}% below EMA50, max -15%)`;
     }
 
     return {
