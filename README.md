@@ -168,6 +168,26 @@ cryptoBot/
    - Clear their logs
    - Stop trading
 
+### Step 5: Backtest Strategies (Optional)
+
+1. Click "📊 Run Backtest (2 Years)" button
+2. Wait 1-2 seconds while historical data loads
+3. View comprehensive results for all 3 strategies:
+   - Win rates over 2 years
+   - Total profit/loss
+   - Number of trades
+   - Average win/loss percentages
+   - Max drawdown
+   - Profit factor
+   - Comparison table ranking strategies
+
+**First Time Setup:**
+Before running backtests, download historical data:
+```bash
+npm run download-data
+```
+This downloads 2 years of BTC/USDT data (~50-100 MB) and takes 5-10 minutes.
+
 ## 📊 Dashboard Features
 
 ### Configuration Panel
@@ -178,6 +198,7 @@ cryptoBot/
 
 ### Control Panel
 - Start/Stop all bots
+- Run backtest button (2-year analysis)
 - Real-time status indicator
 - Quick control access
 
@@ -255,6 +276,9 @@ npm run dev
 
 # Clean build and logs
 npm run clean
+
+# Download 2 years of historical BTC data for backtesting
+npm run download-data
 ```
 
 ### Adding New Strategies
@@ -326,7 +350,7 @@ export class MyStrategy extends BaseStrategy {
 **A:** Very accurate! It uses real-time prices and realistic order execution. The only difference is no actual orders are placed on the exchange.
 
 ### Q: Can I backtest strategies?
-**A:** Not built-in yet, but you can modify the code to replay historical data through the strategies.
+**A:** Yes! Click the "📊 Run Backtest (2 Years)" button in the dashboard. First-time setup requires running `npm run download-data` to download 2 years of historical BTC data.
 
 ## 📜 License
 

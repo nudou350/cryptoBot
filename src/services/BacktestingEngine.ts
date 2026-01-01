@@ -1,5 +1,7 @@
 import { Candle, TradeSignal, Position } from '../types';
 import { BaseStrategy } from '../strategies/BaseStrategy';
+import fs from 'fs';
+import path from 'path';
 
 export interface BacktestTrade {
   entryTime: number;
@@ -47,88 +49,32 @@ export class BacktestingEngine {
   }
 
   /**
-   * Fetch historical candles from Binance
-   * For 2 years of 1-minute candles, we need approximately 1,051,200 candles
-   * Binance API limits us to 1000 candles per request, so we need multiple requests
+   * Load historical candles from pre-downloaded data file
+   * This is much faster and more reliable than fetching from API
    */
-  public async fetchHistoricalData(daysBack: number = 730): Promise<void> {
-    console.log(`[Backtesting] Fetching ${daysBack} days of historical data for ${this.symbol}...`);
+  public loadHistoricalData(): void {
+    console.log(`[Backtesting] Loading historical data for ${this.symbol}...`);
 
-    const now = Date.now();
-    const startTime = now - (daysBack * 24 * 60 * 60 * 1000);
-    const interval = '1m';
-    const limit = 1000; // Max allowed by Binance
+    try {
+      // Try to load from data directory
+      const dataPath = path.join(__dirname, '../../data/btc-2year-historical.json');
 
-    const allCandles: Candle[] = [];
-    let currentStartTime = startTime;
-
-    // Calculate how many requests we need
-    const totalMinutes = daysBack * 24 * 60;
-    const totalRequests = Math.ceil(totalMinutes / limit);
-
-    console.log(`[Backtesting] Estimated ${totalRequests} requests needed...`);
-
-    for (let i = 0; i < totalRequests; i++) {
-      try {
-        const url = `https://api.binance.com/api/v3/klines?symbol=${this.symbol}&interval=${interval}&startTime=${currentStartTime}&limit=${limit}`;
-        const response = await fetch(url);
-
-        if (!response.ok) {
-          console.error(`[Backtesting] Request failed with status ${response.status}`);
-          break;
-        }
-
-        const data: any = await response.json();
-
-        if (!data || data.length === 0) {
-          console.log(`[Backtesting] No more data available`);
-          break;
-        }
-
-        const candles: Candle[] = data.map((kline: any) => ({
-          timestamp: kline[0],
-          open: parseFloat(kline[1]),
-          high: parseFloat(kline[2]),
-          low: parseFloat(kline[3]),
-          close: parseFloat(kline[4]),
-          volume: parseFloat(kline[5])
-        }));
-
-        allCandles.push(...candles);
-
-        // Update start time for next batch
-        currentStartTime = candles[candles.length - 1].timestamp + 60000; // +1 minute
-
-        // Progress update
-        if ((i + 1) % 50 === 0 || i === totalRequests - 1) {
-          const progress = ((i + 1) / totalRequests * 100).toFixed(1);
-          console.log(`[Backtesting] Progress: ${progress}% (${allCandles.length.toLocaleString()} candles)`);
-        }
-
-        // Rate limiting: Binance allows ~1200 requests per minute
-        // Adding small delay to be safe
-        if (i % 100 === 0 && i > 0) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-
-        // Stop if we've reached the present
-        if (currentStartTime >= now) {
-          break;
-        }
-      } catch (error) {
-        console.error(`[Backtesting] Error fetching data batch ${i}:`, error);
-        // Continue with what we have
-        break;
+      if (!fs.existsSync(dataPath)) {
+        throw new Error('Historical data file not found. Please run: npm run download-data');
       }
-    }
 
-    this.candles = allCandles;
-    console.log(`[Backtesting] Fetched ${this.candles.length.toLocaleString()} candles`);
+      const fileContent = fs.readFileSync(dataPath, 'utf-8');
+      const data = JSON.parse(fileContent);
 
-    if (this.candles.length > 0) {
-      const startDate = new Date(this.candles[0].timestamp).toISOString();
-      const endDate = new Date(this.candles[this.candles.length - 1].timestamp).toISOString();
-      console.log(`[Backtesting] Data range: ${startDate} to ${endDate}`);
+      this.candles = data.candles;
+
+      console.log(`[Backtesting] Loaded ${this.candles.length.toLocaleString()} candles`);
+      console.log(`[Backtesting] Data range: ${data.startDate} to ${data.endDate}`);
+      console.log(`[Backtesting] Days of data: ${data.daysOfData}`);
+      console.log(`[Backtesting] Downloaded at: ${data.downloadedAt}`);
+    } catch (error: any) {
+      console.error(`[Backtesting] Error loading historical data:`, error.message);
+      throw new Error('Failed to load historical data. Please run: npm run download-data');
     }
   }
 

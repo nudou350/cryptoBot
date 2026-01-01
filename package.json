@@ -8,7 +8,8 @@
     "start": "npm run build && node dist/index.js",
     "dev": "ts-node src/index.ts",
     "clean": "rm -rf dist logs/*.log",
-    "test": "echo \"Testing build...\" && npm run build && echo \"Build successful!\""
+    "test": "echo \"Testing build...\" && npm run build && echo \"Build successful!\"",
+    "download-data": "ts-node scripts/downloadHistoricalData.ts"
   },
   "keywords": ["crypto", "trading", "bot", "binance", "btc"],
   "author": "",

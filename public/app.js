@@ -196,7 +196,6 @@ backtestBtn.addEventListener('click', async () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                daysBack: 730, // 2 years
                 initialBudget: initialBudget
             })
         });

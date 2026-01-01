@@ -512,14 +512,14 @@ app.get('/api/monitoring/status', (req, res) => {
  */
 app.post('/api/backtest', async (req, res) => {
   try {
-    const { daysBack = 730, initialBudget = 1000, strategy } = req.body;
+    const { initialBudget = 1000, strategy } = req.body;
 
-    console.log(`[API] Starting backtest - Days: ${daysBack}, Budget: $${initialBudget}`);
+    console.log(`[API] Starting backtest - Budget: $${initialBudget}`);
 
     const backtestEngine = new BacktestingEngine('BTCUSDT');
 
-    // Fetch historical data
-    await backtestEngine.fetchHistoricalData(daysBack);
+    // Load historical data from file (much faster than fetching)
+    backtestEngine.loadHistoricalData();
 
     const strategies = {
       'MeanReversion': new MeanReversionStrategy(),
