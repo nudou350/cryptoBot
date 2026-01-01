@@ -5,6 +5,7 @@ import { MeanReversionStrategy } from './strategies/MeanReversionStrategy';
 import { SashaHybridOptimizedStrategy } from './strategies/SashaHybridOptimizedStrategy';
 import { TripleEMAStrategy } from './strategies/TripleEMAStrategy';
 import { EMARibbonStrategy } from './strategies/EMARibbonStrategy';
+import { FinalTrendStrategy } from './strategies/FinalTrendStrategy';
 import { BotMode, BotStats } from './types';
 
 /**
@@ -42,6 +43,7 @@ export class BotManager {
 
     // Define which bots to create
     const botsToCreate = [
+      { name: 'FinalTrend', strategy: new FinalTrendStrategy() },
       { name: 'MeanReversion', strategy: new MeanReversionStrategy() },
       { name: 'Sasha-Hybrid-Optimized', strategy: new SashaHybridOptimizedStrategy() },
       { name: 'GridTrading', strategy: new GridTradingStrategy() },

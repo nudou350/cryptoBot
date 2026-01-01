@@ -7,3 +7,7 @@ logs/*.log
 nul
 logs/exports/timeseries.csv
 
+# Large data files (exceeds GitHub 100MB limit)
+# Run 'npm run download-data' to generate locally
+data/btc-2year-historical.json
+

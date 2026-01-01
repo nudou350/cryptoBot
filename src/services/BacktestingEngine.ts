@@ -38,11 +38,22 @@ export interface BacktestResults {
   profitFactor: number; // Total wins / Total losses
   avgHoldingPeriod: number; // in minutes
   trades: BacktestTrade[];
+  // Leverage-specific fields
+  leverage?: number;
+  liquidated?: boolean;
+  liquidationTime?: number;
+  liquidationPrice?: number;
 }
 
 export class BacktestingEngine {
   private candles: Candle[] = [];
   private symbol: string;
+
+  // Realistic trading parameters
+  private static readonly FEE_RATE = 0.00075; // 0.075% Binance fee with BNB discount
+  private static readonly SLIPPAGE_RATE = 0.001; // 0.1% average slippage for market orders
+  private static readonly MAX_POSITION_PERCENT = 0.20; // Max 20% of capital per trade
+  private static readonly DEFAULT_POSITION_PERCENT = 0.15; // Default 15% of capital per trade
 
   constructor(symbol: string = 'BTCUSDT') {
     this.symbol = symbol.toUpperCase();
@@ -80,16 +91,27 @@ export class BacktestingEngine {
 
   /**
    * Run backtest simulation for a given strategy
+   * @param strategy - The trading strategy to test
+   * @param initialBudget - Starting capital (default: 1000)
+   * @param leverage - Leverage multiplier (default: 1 = no leverage)
    */
   public async runBacktest(
     strategy: BaseStrategy,
-    initialBudget: number = 1000
+    initialBudget: number = 1000,
+    leverage: number = 1
   ): Promise<BacktestResults> {
-    console.log(`[Backtesting] Starting backtest for ${strategy.getName()}...`);
+    const leverageStr = leverage > 1 ? ` (${leverage}x leverage)` : '';
+    console.log(`[Backtesting] Starting backtest for ${strategy.getName()}${leverageStr}...`);
 
     if (this.candles.length < 100) {
       throw new Error('Not enough historical data. Please fetch data first.');
     }
+
+    // Leverage parameters
+    const LIQUIDATION_THRESHOLD = 0.90; // Liquidate at 90% loss of margin
+    let liquidated = false;
+    let liquidationTime: number | undefined;
+    let liquidationPrice: number | undefined;
 
     let currentBudget = initialBudget;
     let position: Position | null = null;
@@ -97,18 +119,57 @@ export class BacktestingEngine {
     let peakBudget = initialBudget;
     let maxDrawdown = 0;
 
-    // We need at least 100 candles for strategy analysis
-    const startIndex = 100;
+    // We need enough candles for strategy analysis
+    // For hourly strategies: need at least 60 * 60 = 3600 candles
+    // For regular strategies: need at least 200 candles
+    const CANDLE_HISTORY = 4000; // Enough for hourly strategies with 60+ periods
+    const startIndex = CANDLE_HISTORY;
 
     for (let i = startIndex; i < this.candles.length; i++) {
       const currentCandle = this.candles[i];
-      const historicalCandles = this.candles.slice(Math.max(0, i - 100), i);
+      const historicalCandles = this.candles.slice(Math.max(0, i - CANDLE_HISTORY), i);
       const currentPrice = currentCandle.close;
 
       // If we have a position, check exit conditions
-      if (position) {
+      if (position && !liquidated) {
         const unrealizedPnL = (currentPrice - position.entryPrice) * position.amount;
         const unrealizedPnLPercent = ((currentPrice - position.entryPrice) / position.entryPrice) * 100;
+
+        // Check for liquidation (with leverage)
+        const marginUsed = position.unrealizedPnL; // We stored margin in unrealizedPnL
+        const leveragedLoss = Math.abs(Math.min(0, unrealizedPnL));
+
+        if (leverage > 1 && leveragedLoss >= marginUsed * LIQUIDATION_THRESHOLD) {
+          // LIQUIDATION - lost 90%+ of margin
+          liquidated = true;
+          liquidationTime = currentCandle.timestamp;
+          liquidationPrice = currentPrice;
+
+          // Lose all margin
+          trades.push({
+            entryTime: position.timestamp,
+            exitTime: currentCandle.timestamp,
+            entryPrice: position.entryPrice,
+            exitPrice: currentPrice,
+            amount: position.amount,
+            profit: -marginUsed, // Lost all margin
+            profitPercent: -100 * LIQUIDATION_THRESHOLD,
+            win: false,
+            reason: 'Entry',
+            exitReason: `LIQUIDATED (${leverage}x leverage)`,
+            holdingPeriod: (currentCandle.timestamp - position.timestamp) / 60000
+          });
+
+          // Update max drawdown
+          const drawdown = peakBudget - currentBudget;
+          if (drawdown > maxDrawdown) {
+            maxDrawdown = drawdown;
+          }
+
+          position = null;
+          console.log(`[Backtesting] LIQUIDATED at $${currentPrice.toFixed(2)} - Lost ${(LIQUIDATION_THRESHOLD * 100).toFixed(0)}% of margin`);
+          continue; // Skip rest of loop
+        }
 
         let shouldExit = false;
         let exitReason = '';
@@ -133,24 +194,38 @@ export class BacktestingEngine {
         }
 
         if (shouldExit) {
-          // Close position
-          const sellAmount = position.amount * currentPrice;
-          currentBudget += sellAmount;
+          // Apply slippage to exit price (worse fill = lower price for sells)
+          const exitSlippage = currentPrice * BacktestingEngine.SLIPPAGE_RATE;
+          const actualExitPrice = currentPrice - exitSlippage;
 
-          const profit = unrealizedPnL;
-          const profitPercent = unrealizedPnLPercent;
+          // Calculate gross proceeds (leveraged position)
+          const grossProceeds = position.amount * actualExitPrice;
+
+          // Calculate exit fee on full leveraged position
+          const exitFee = grossProceeds * BacktestingEngine.FEE_RATE;
+          const netProceeds = grossProceeds - exitFee;
+
+          // Calculate actual profit (leveraged)
+          const entryCost = position.amount * position.entryPrice;
+          const leveragedProfit = netProceeds - entryCost;
+
+          // Get margin back + leveraged profit
+          const marginUsed = position.unrealizedPnL; // We stored margin here
+          currentBudget += marginUsed + leveragedProfit;
+
+          const profitPercent = (leveragedProfit / marginUsed) * 100; // Return on margin
           const holdingPeriod = (currentCandle.timestamp - position.timestamp) / 60000; // in minutes
 
           trades.push({
             entryTime: position.timestamp,
             exitTime: currentCandle.timestamp,
             entryPrice: position.entryPrice,
-            exitPrice: currentPrice,
+            exitPrice: actualExitPrice, // Use slippage-adjusted exit price
             amount: position.amount,
-            profit,
+            profit: leveragedProfit,
             profitPercent,
-            win: profit > 0,
-            reason: position.unrealizedPnL.toString(), // Store entry reason (reusing field)
+            win: leveragedProfit > 0,
+            reason: 'Entry',
             exitReason,
             holdingPeriod
           });
@@ -167,31 +242,43 @@ export class BacktestingEngine {
           position = null;
         }
       }
-      // If no position, check for entry signal
-      else {
+      // If no position and not liquidated, check for entry signal
+      else if (!liquidated) {
         const signal = strategy.analyze(historicalCandles, currentPrice);
 
         if (signal.action === 'buy' && currentBudget > 0) {
-          // Enter position
-          const positionValue = currentBudget * 0.95; // Use 95% of budget (keep 5% for fees)
-          const amount = positionValue / currentPrice;
+          // Enter position with realistic sizing
+          const marginUsed = Math.min(
+            currentBudget * BacktestingEngine.DEFAULT_POSITION_PERCENT,
+            currentBudget * BacktestingEngine.MAX_POSITION_PERCENT
+          );
 
-          currentBudget -= positionValue;
+          // With leverage, position value is multiplied
+          const positionValue = marginUsed * leverage;
+
+          // Calculate entry fee on full leveraged position
+          const entryFee = positionValue * BacktestingEngine.FEE_RATE;
+          const actualPositionValue = positionValue - entryFee;
+
+          // Apply slippage to entry price (worse fill = higher price for buys)
+          const slippageAmount = currentPrice * BacktestingEngine.SLIPPAGE_RATE;
+          const actualEntryPrice = currentPrice + slippageAmount;
+
+          const amount = actualPositionValue / actualEntryPrice;
+
+          currentBudget -= marginUsed; // Only deduct margin (not full leveraged amount)
 
           position = {
             symbol: this.symbol,
             side: 'long',
-            entryPrice: currentPrice,
+            entryPrice: actualEntryPrice, // Use slippage-adjusted price
             amount,
             currentPrice,
-            unrealizedPnL: 0,
+            unrealizedPnL: marginUsed, // Store margin used for liquidation calc
             stopLoss: signal.stopLoss,
             takeProfit: signal.takeProfit,
             timestamp: currentCandle.timestamp
           };
-
-          // Record trade for tracking entry reason
-          position.unrealizedPnL = parseFloat(signal.reason.substring(0, 100)); // Hack to store reason
         }
       }
 
@@ -203,24 +290,37 @@ export class BacktestingEngine {
     }
 
     // If we still have an open position at the end, close it
-    if (position) {
+    if (position && !liquidated) {
       const finalPrice = this.candles[this.candles.length - 1].close;
-      const sellAmount = position.amount * finalPrice;
-      currentBudget += sellAmount;
 
-      const profit = (finalPrice - position.entryPrice) * position.amount;
-      const profitPercent = ((finalPrice - position.entryPrice) / position.entryPrice) * 100;
+      // Apply slippage to exit price
+      const exitSlippage = finalPrice * BacktestingEngine.SLIPPAGE_RATE;
+      const actualExitPrice = finalPrice - exitSlippage;
+
+      // Calculate gross proceeds with exit fee (leveraged)
+      const grossProceeds = position.amount * actualExitPrice;
+      const exitFee = grossProceeds * BacktestingEngine.FEE_RATE;
+      const netProceeds = grossProceeds - exitFee;
+
+      const entryCost = position.amount * position.entryPrice;
+      const leveragedProfit = netProceeds - entryCost;
+
+      // Get margin back + leveraged profit
+      const marginUsed = position.unrealizedPnL;
+      currentBudget += marginUsed + leveragedProfit;
+
+      const profitPercent = (leveragedProfit / marginUsed) * 100;
       const holdingPeriod = (this.candles[this.candles.length - 1].timestamp - position.timestamp) / 60000;
 
       trades.push({
         entryTime: position.timestamp,
         exitTime: this.candles[this.candles.length - 1].timestamp,
         entryPrice: position.entryPrice,
-        exitPrice: finalPrice,
+        exitPrice: actualExitPrice,
         amount: position.amount,
-        profit,
+        profit: leveragedProfit,
         profitPercent,
-        win: profit > 0,
+        win: leveragedProfit > 0,
         reason: 'Entry',
         exitReason: 'Backtest End',
         holdingPeriod
@@ -260,6 +360,10 @@ export class BacktestingEngine {
       maxDrawdown,
       maxDrawdownPercent: (maxDrawdown / peakBudget) * 100,
       profitFactor: totalLosses > 0 ? totalWins / totalLosses : totalWins,
+      leverage,
+      liquidated,
+      liquidationTime,
+      liquidationPrice,
       avgHoldingPeriod: trades.length > 0
         ? trades.reduce((sum, t) => sum + t.holdingPeriod, 0) / trades.length
         : 0,

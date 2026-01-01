@@ -10,7 +10,10 @@
     "clean": "rm -rf dist logs/*.log",
     "test": "echo \"Testing build...\" && npm run build && echo \"Build successful!\"",
     "download-data": "ts-node scripts/downloadHistoricalData.ts",
-    "generate-sample-data": "ts-node scripts/generateSampleData.ts"
+    "generate-sample-data": "ts-node scripts/generateSampleData.ts",
+    "backtest-profitable": "ts-node src/scripts/runProfitableBacktest.ts",
+    "backtest-5x": "ts-node scripts/run5xLeverageBacktest.ts",
+    "backtest-leverage": "ts-node scripts/runLeverageBacktest.ts"
   },
   "keywords": ["crypto", "trading", "bot", "binance", "btc"],
   "author": "",
