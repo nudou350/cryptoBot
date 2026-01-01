@@ -137,6 +137,15 @@ header h1 {
     background: #3182ce;
 }
 
+.btn-warning {
+    background: #ed8936;
+    color: white;
+}
+
+.btn-warning:hover {
+    background: #dd6b20;
+}
+
 .controls {
     display: flex;
     align-items: center;

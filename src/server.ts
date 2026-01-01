@@ -135,6 +135,48 @@ app.post('/api/stop', async (req, res) => {
 });
 
 /**
+ * POST /api/reset
+ * Stop all bots and reset the system to allow reconfiguration
+ */
+app.post('/api/reset', async (req, res) => {
+  try {
+    // Stop bots if running
+    if (botManager) {
+      try {
+        await botManager.stopAll();
+      } catch (e) {
+        // Ignore errors during stop
+      }
+    }
+
+    // Stop performance monitor if running
+    if (performanceMonitor) {
+      try {
+        performanceMonitor.stop();
+      } catch (e) {
+        // Ignore errors during stop
+      }
+    }
+
+    // Reset to null - allows reinitialization with new settings
+    botManager = null;
+    performanceMonitor = null;
+
+    console.log('[API] System reset - ready for reconfiguration');
+
+    res.json({
+      success: true,
+      message: 'System reset successfully. You can now reconfigure with a new budget.'
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
  * GET /api/bots
  * Get list of all bots
  */

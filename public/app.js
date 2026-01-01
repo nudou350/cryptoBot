@@ -22,6 +22,7 @@ const statsSection = document.getElementById('stats-section');
 const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
 const backtestBtn = document.getElementById('backtest-btn');
+const resetBtn = document.getElementById('reset-btn');
 const statusSpan = document.getElementById('status');
 const botSelect = document.getElementById('bot-select');
 const currentBotName = document.getElementById('current-bot-name');
@@ -170,6 +171,65 @@ stopBtn.addEventListener('click', async () => {
         alert(`Error: ${error.message}`);
         stopBtn.disabled = false;
         stopBtn.textContent = 'Stop All Bots';
+    }
+});
+
+// Reset system - stop everything and go back to config
+resetBtn.addEventListener('click', async () => {
+    if (!confirm('Are you sure you want to reset the system?\n\nThis will:\n- Stop all running bots\n- Close all positions\n- Allow you to change the budget\n\nYou will need to initialize again.')) {
+        return;
+    }
+
+    try {
+        resetBtn.disabled = true;
+        resetBtn.textContent = 'Resetting...';
+
+        const response = await fetch(`${API_URL}/reset`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Stop auto-update
+            stopAutoUpdate();
+            stopLogStream();
+
+            // Reset UI state
+            statusSpan.textContent = 'Stopped';
+            statusSpan.className = 'status stopped';
+            startBtn.disabled = false;
+            startBtn.textContent = 'Start All Bots';
+            stopBtn.disabled = true;
+            stopBtn.textContent = 'Stop All Bots';
+
+            // Hide all sections except config
+            controlSection.style.display = 'none';
+            botSection.style.display = 'none';
+            statsSection.style.display = 'none';
+            logsSection.style.display = 'none';
+            performanceSection.style.display = 'none';
+
+            // Show config section
+            configSection.style.display = 'block';
+            initializeBtn.disabled = false;
+            initializeBtn.textContent = 'Initialize System';
+
+            // Clear bot selection
+            botSelect.innerHTML = '<option value="">Choose a bot...</option>';
+            selectedBot = '';
+
+            alert('System reset successfully! You can now change the budget and reinitialize.');
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+
+        resetBtn.disabled = false;
+        resetBtn.textContent = '🔄 Reset & Change Budget';
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+        resetBtn.disabled = false;
+        resetBtn.textContent = '🔄 Reset & Change Budget';
     }
 });
 
