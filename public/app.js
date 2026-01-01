@@ -292,12 +292,7 @@ closeModal.addEventListener('click', () => {
     backtestModal.classList.remove('active');
 });
 
-// Close modal when clicking outside
-window.addEventListener('click', (event) => {
-    if (event.target === backtestModal) {
-        backtestModal.classList.remove('active');
-    }
-});
+// Removed: Close modal when clicking outside (now only closes via X button)
 
 // Display backtest results
 function displayBacktestResults(results) {
