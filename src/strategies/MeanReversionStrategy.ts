@@ -31,14 +31,14 @@ export class MeanReversionStrategy extends BaseStrategy {
   private readonly bbStdDev: number = 2;
 
   // FOCUSED THRESHOLDS - EXTREME OVERSOLD ONLY
-  private readonly rsiLowerBound: number = 15; // Deep oversold (extreme bounces)
-  private readonly rsiUpperBound: number = 35; // Upper bound for oversold (relaxed from 38)
-  private readonly adxMaxThreshold: number = 35; // Avoid strong downtrends (relaxed from 30)
+  private readonly rsiLowerBound: number = 25; // Deep oversold (extreme bounces)
+  private readonly rsiUpperBound: number = 40; // Upper bound for oversold (relaxed from 38)
+  private readonly adxMaxThreshold: number = 25; // Avoid strong downtrends (relaxed from 30)
   private readonly bbWidthMaxThreshold: number = 8; // Allow more volatility (relaxed from 6%)
-  private readonly volumeMultiplier: number = 0.8; // 0.8x average volume (relaxed from 1.0)
+  private readonly volumeMultiplier: number = 1.8; // 0.8x average volume (relaxed from 1.0)
 
   // IMPROVED RISK MANAGEMENT
-  private readonly stopLossPercent: number = 2.2; // Reasonable stop (was 1.5%)
+  private readonly stopLossPercent: number = 3.0; // Reasonable stop (was 1.5%)
   private readonly takeProfitPercent: number = 5.0; // Better R:R (was 3.5%, now 1:2.27)
   private readonly trailingStopTrigger: number = 3.0; // Trail at 3% profit
   private readonly trailingStopAmount: number = 1.2; // Trail back 1.2%
