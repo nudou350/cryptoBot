@@ -9,7 +9,8 @@
     "dev": "ts-node src/index.ts",
     "clean": "rm -rf dist logs/*.log",
     "test": "echo \"Testing build...\" && npm run build && echo \"Build successful!\"",
-    "download-data": "ts-node scripts/downloadHistoricalData.ts"
+    "download-data": "ts-node scripts/downloadHistoricalData.ts",
+    "generate-sample-data": "ts-node scripts/generateSampleData.ts"
   },
   "keywords": ["crypto", "trading", "bot", "binance", "btc"],
   "author": "",

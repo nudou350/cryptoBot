@@ -7,6 +7,3 @@ logs/*.log
 nul
 logs/exports/timeseries.csv
 
-# Historical data files (large, should be downloaded locally)
-data/btc-2year-historical.json
-

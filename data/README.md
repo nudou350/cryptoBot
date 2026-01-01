@@ -1,16 +1,24 @@
 # Historical Data Directory
 
-This directory contains pre-downloaded historical BTC/USDT price data for backtesting.
+This directory contains historical BTC/USDT price data for backtesting.
 
 ## File: `btc-2year-historical.json`
 
-This file contains 2 years of 1-minute candle data from Binance.
+This file contains 1-minute candle data.
 
+**Default (Included in repo):**
 - **Symbol**: BTC/USDT
 - **Interval**: 1 minute
-- **Duration**: ~730 days (~2 years)
+- **Duration**: 90 days (sample data for testing)
+- **Candles**: ~130,000 data points
+- **File Size**: ~22 MB
+- **Source**: Generated sample data
+
+**Optional (Download real data):**
+- **Duration**: 730 days (~2 years)
 - **Candles**: ~1,000,000+ data points
-- **File Size**: ~50-100 MB
+- **File Size**: ~180 MB
+- **Source**: Real Binance historical data
 
 ## How to Download Data
 
