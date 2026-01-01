@@ -32,10 +32,10 @@ export class SashaHybridOptimizedStrategy extends BaseStrategy {
   private readonly adxPeriod: number = 14;
 
   // RELAXED THRESHOLDS FOR MORE TRADES
-  private readonly rsiLowerBound: number = 20; // Oversold but not extreme
-  private readonly rsiUpperBound: number = 50; // Extended pullback zone (relaxed from 45)
-  private readonly pullbackMaxPercent: number = 6.0; // Max distance from EMA21 (relaxed from 4.0)
-  private readonly volumeMultiplier: number = 0.7; // 0.7x average volume (relaxed from 0.8)
+  private readonly rsiLowerBound: number = 32; // Oversold but not extreme
+  private readonly rsiUpperBound: number = 48; // Extended pullback zone (relaxed from 45)
+  private readonly pullbackMaxPercent: number = 5.0; // Max distance from EMA21 (relaxed from 4.0)
+  private readonly volumeMultiplier: number = 1.8; // 0.7x average volume (relaxed from 0.8)
 
   // IMPROVED RISK MANAGEMENT
   private readonly stopLossPercent: number = 2.0; // Reasonable stop (was 1.5%)

@@ -31,15 +31,15 @@ export class GridTradingStrategy extends BaseStrategy {
   private readonly bbPeriod: number = 20;
 
   // RELAXED THRESHOLDS FOR MORE TRADES
-  private readonly rsiLowerBound: number = 15; // Deep oversold (catch bounces)
-  private readonly rsiUpperBound: number = 40; // Extended oversold zone
-  private readonly dipMinPercent: number = 0.5; // Minimum dip below SMA (relaxed from 1.0)
-  private readonly dipMaxPercent: number = 6.0; // Maximum dip below SMA (relaxed from 5.0)
-  private readonly volumeMultiplier: number = 0.7; // 0.7x average volume (very relaxed)
+  private readonly rsiLowerBound: number = 25; // Deep oversold (catch bounces)
+  private readonly rsiUpperBound: number = 38; // Extended oversold zone
+  private readonly dipMinPercent: number = 1.5; // Minimum dip below SMA (relaxed from 1.0)
+  private readonly dipMaxPercent: number = 4.0; // Maximum dip below SMA (relaxed from 5.0)
+  private readonly volumeMultiplier: number = 1.8; // 0.7x average volume (very relaxed)
 
   // IMPROVED RISK MANAGEMENT
-  private readonly stopLossPercent: number = 1.8; // Reasonable stop (was 1.5%)
-  private readonly takeProfitPercent: number = 4.0; // Better R:R (was 2.5%, now 1:2.2)
+  private readonly stopLossPercent: number = 3.0; // Reasonable stop (was 1.5%)
+  private readonly takeProfitPercent: number = 5.0; // Better R:R (was 2.5%, now 1:2.2)
   private readonly trailingStopTrigger: number = 2.5; // Trail at 2.5% profit
   private readonly trailingStopAmount: number = 1.0; // Trail back 1%
 
