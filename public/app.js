@@ -21,10 +21,16 @@ const botSection = document.getElementById('bot-section');
 const statsSection = document.getElementById('stats-section');
 const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
+const backtestBtn = document.getElementById('backtest-btn');
 const statusSpan = document.getElementById('status');
 const botSelect = document.getElementById('bot-select');
 const currentBotName = document.getElementById('current-bot-name');
 const currentPrice = document.getElementById('current-price');
+
+// Backtest modal elements
+const backtestModal = document.getElementById('backtest-modal');
+const backtestResults = document.getElementById('backtest-results');
+const closeModal = document.querySelector('.close-modal');
 
 // Log viewer elements
 const logsSection = document.getElementById('logs-section');
@@ -166,6 +172,229 @@ stopBtn.addEventListener('click', async () => {
         stopBtn.textContent = 'Stop All Bots';
     }
 });
+
+// Backtest button
+backtestBtn.addEventListener('click', async () => {
+    try {
+        // Show modal with loading state
+        backtestModal.classList.add('active');
+        backtestResults.innerHTML = `
+            <div class="backtest-loading">
+                <div class="spinner"></div>
+                <p>Running backtest... This may take a few minutes.</p>
+                <p class="loading-subtext">Fetching 2 years of historical BTC data and simulating trades...</p>
+            </div>
+        `;
+
+        backtestBtn.disabled = true;
+        backtestBtn.textContent = 'Running...';
+
+        // Get initial budget from the input
+        const initialBudget = parseFloat(budgetInput.value) || 1000;
+
+        const response = await fetch(`${API_URL}/backtest`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                daysBack: 730, // 2 years
+                initialBudget: initialBudget
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            displayBacktestResults(data.results);
+        } else {
+            backtestResults.innerHTML = `
+                <div style="text-align: center; padding: 40px; color: #f56565;">
+                    <h3>Error Running Backtest</h3>
+                    <p>${data.error}</p>
+                </div>
+            `;
+        }
+
+        backtestBtn.disabled = false;
+        backtestBtn.textContent = '📊 Run Backtest (2 Years)';
+    } catch (error) {
+        backtestResults.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #f56565;">
+                <h3>Error</h3>
+                <p>${error.message}</p>
+            </div>
+        `;
+        backtestBtn.disabled = false;
+        backtestBtn.textContent = '📊 Run Backtest (2 Years)';
+    }
+});
+
+// Close modal
+closeModal.addEventListener('click', () => {
+    backtestModal.classList.remove('active');
+});
+
+// Close modal when clicking outside
+window.addEventListener('click', (event) => {
+    if (event.target === backtestModal) {
+        backtestModal.classList.remove('active');
+    }
+});
+
+// Display backtest results
+function displayBacktestResults(results) {
+    // Sort results by total PnL to find best strategy
+    const sortedResults = [...results].sort((a, b) => b.totalPnL - a.totalPnL);
+    const bestStrategy = sortedResults[0];
+
+    let html = '<div class="backtest-results-grid">';
+
+    // Display each strategy result
+    results.forEach(result => {
+        const isBest = result.strategyName === bestStrategy.strategyName;
+        const startDate = new Date(result.startDate).toLocaleDateString();
+        const endDate = new Date(result.endDate).toLocaleDateString();
+        const avgHoldingHours = (result.avgHoldingPeriod / 60).toFixed(1);
+
+        html += `
+            <div class="strategy-result">
+                <h3>
+                    ${result.strategyName}
+                    ${isBest ? '<span class="winner-badge">🏆 BEST</span>' : ''}
+                </h3>
+                <p style="color: #718096; margin-bottom: 15px;">
+                    <strong>Period:</strong> ${startDate} - ${endDate}
+                </p>
+                <div class="backtest-stats">
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-label">Win Rate</div>
+                        <div class="backtest-stat-value ${result.winRate >= 50 ? 'positive' : 'negative'}">
+                            ${result.winRate.toFixed(2)}%
+                        </div>
+                    </div>
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-label">Total PnL</div>
+                        <div class="backtest-stat-value ${result.totalPnL >= 0 ? 'positive' : 'negative'}">
+                            $${result.totalPnL.toFixed(2)} (${result.totalPnLPercent.toFixed(2)}%)
+                        </div>
+                    </div>
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-label">Final Budget</div>
+                        <div class="backtest-stat-value">
+                            $${result.finalBudget.toFixed(2)}
+                        </div>
+                    </div>
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-label">Total Trades</div>
+                        <div class="backtest-stat-value">
+                            ${result.totalTrades}
+                        </div>
+                    </div>
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-label">Winning / Losing</div>
+                        <div class="backtest-stat-value">
+                            <span style="color: #48bb78;">${result.winningTrades}</span> /
+                            <span style="color: #f56565;">${result.losingTrades}</span>
+                        </div>
+                    </div>
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-label">Avg Win</div>
+                        <div class="backtest-stat-value positive">
+                            ${result.avgWinPercent.toFixed(2)}%
+                        </div>
+                    </div>
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-label">Avg Loss</div>
+                        <div class="backtest-stat-value negative">
+                            ${result.avgLossPercent.toFixed(2)}%
+                        </div>
+                    </div>
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-label">Profit Factor</div>
+                        <div class="backtest-stat-value ${result.profitFactor >= 1 ? 'positive' : 'negative'}">
+                            ${result.profitFactor.toFixed(2)}
+                        </div>
+                    </div>
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-label">Max Drawdown</div>
+                        <div class="backtest-stat-value negative">
+                            $${result.maxDrawdown.toFixed(2)} (${result.maxDrawdownPercent.toFixed(2)}%)
+                        </div>
+                    </div>
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-label">Largest Win</div>
+                        <div class="backtest-stat-value positive">
+                            $${result.largestWin.toFixed(2)}
+                        </div>
+                    </div>
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-label">Largest Loss</div>
+                        <div class="backtest-stat-value negative">
+                            $${result.largestLoss.toFixed(2)}
+                        </div>
+                    </div>
+                    <div class="backtest-stat">
+                        <div class="backtest-stat-label">Avg Hold Time</div>
+                        <div class="backtest-stat-value">
+                            ${avgHoldingHours}h
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    html += '</div>';
+
+    // Add comparison table
+    html += `
+        <div class="backtest-comparison">
+            <h3>📊 Strategy Comparison</h3>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Strategy</th>
+                        <th>Win Rate</th>
+                        <th>Total PnL</th>
+                        <th>Trades</th>
+                        <th>Profit Factor</th>
+                        <th>Max Drawdown</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    sortedResults.forEach((result, index) => {
+        html += `
+            <tr>
+                <td>
+                    <strong>${result.strategyName}</strong>
+                    ${index === 0 ? '<span class="winner-badge">🏆</span>' : ''}
+                </td>
+                <td class="${result.winRate >= 50 ? 'positive' : 'negative'}">
+                    ${result.winRate.toFixed(2)}%
+                </td>
+                <td class="${result.totalPnL >= 0 ? 'positive' : 'negative'}">
+                    $${result.totalPnL.toFixed(2)}
+                </td>
+                <td>${result.totalTrades}</td>
+                <td class="${result.profitFactor >= 1 ? 'positive' : 'negative'}">
+                    ${result.profitFactor.toFixed(2)}
+                </td>
+                <td class="negative">
+                    $${result.maxDrawdown.toFixed(2)}
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    backtestResults.innerHTML = html;
+}
 
 // Bot selection changed
 botSelect.addEventListener('change', () => {

@@ -4,6 +4,10 @@ import path from 'path';
 import fs from 'fs';
 import { BotManager } from './BotManager';
 import { PerformanceMonitor } from './monitoring/PerformanceMonitor';
+import { BacktestingEngine } from './services/BacktestingEngine';
+import { MeanReversionStrategy } from './strategies/MeanReversionStrategy';
+import { SashaHybridOptimizedStrategy } from './strategies/SashaHybridOptimizedStrategy';
+import { GridTradingStrategy } from './strategies/GridTradingStrategy';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -495,6 +499,58 @@ app.get('/api/monitoring/status', (req, res) => {
       status
     });
   } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/backtest
+ * Run backtest for all strategies or a specific strategy
+ */
+app.post('/api/backtest', async (req, res) => {
+  try {
+    const { daysBack = 730, initialBudget = 1000, strategy } = req.body;
+
+    console.log(`[API] Starting backtest - Days: ${daysBack}, Budget: $${initialBudget}`);
+
+    const backtestEngine = new BacktestingEngine('BTCUSDT');
+
+    // Fetch historical data
+    await backtestEngine.fetchHistoricalData(daysBack);
+
+    const strategies = {
+      'MeanReversion': new MeanReversionStrategy(),
+      'SashaHybridOptimized': new SashaHybridOptimizedStrategy(),
+      'GridTrading': new GridTradingStrategy()
+    };
+
+    // If specific strategy requested, only test that one
+    if (strategy && strategies[strategy as keyof typeof strategies]) {
+      const strategyInstance = strategies[strategy as keyof typeof strategies];
+      const results = await backtestEngine.runBacktest(strategyInstance, initialBudget);
+
+      return res.json({
+        success: true,
+        results: [results]
+      });
+    }
+
+    // Otherwise, test all strategies
+    const results = [];
+    for (const [name, strategyInstance] of Object.entries(strategies)) {
+      const result = await backtestEngine.runBacktest(strategyInstance, initialBudget);
+      results.push(result);
+    }
+
+    res.json({
+      success: true,
+      results
+    });
+  } catch (error: any) {
+    console.error('[API] Backtest error:', error);
     res.status(500).json({
       success: false,
       error: error.message
